@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-node-app
+  labels:
+    app: demo-node-app
+spec:
+  selector:
+    matchLabels:
+      app: demo-node-app
+  replicas: 1
+  revisionHistoryLimit: 0
+  template:
+    metadata:
+      labels:
+        app: demo-node-app
+    spec:
+      containers:
+      - name: demo-node-app
+        image: vishalgore273/demo-node-app:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        securityContext:
+          privileged: true
