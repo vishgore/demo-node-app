@@ -9,7 +9,7 @@
   "author": "V G",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.21.2"
   },
   "devDependencies": {
     "mocha": "^9.1.1",
