@@ -2,7 +2,7 @@
 
 # 1. Use a recent but not the absolute latest minor version of Node.js LTS (Bookworm based)
 #    Using a valid, specific minor version like 20.11.0 to demonstrate fixes.
-FROM node:20.11.0-bookworm-slim
+FROM node:20.11.1-bookworm-slim
 
 # 2. Set working directory
 WORKDIR /app
