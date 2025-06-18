@@ -2,7 +2,7 @@ name: Prebuilt repo + Snyk Security Scanning (OS, Code, Docker, IaC)
 
 # Runs 4 Snyk Products (Code, Open Source, Container, IaC)
 # Snyk installation via npm
-# Node.js version: 18.4
+# Node.js version: 20.10
 # Outputs the results to the pipeline and in SARIF-format to the security tab
 
 # Prerequisites:
@@ -20,7 +20,7 @@ jobs:
     - name: Use Node.js for installing Snyk 
       uses: actions/setup-node@v2
       with:
-        node-version: 18.4
+        node-version: 20.10
 
     # Install & prepare Snyk
     - run: npm install --location=global snyk
