@@ -1,7 +1,7 @@
 {
   "name": "gradual-fix-node-app",
   "version": "1.0.0",
-  "description": "A demo Node.js Express app for gradual vulnerability fixes",
+  "description": "A demo Node.js Express app for gradual vulnerability fixes (base image focus)",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
