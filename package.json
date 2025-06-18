@@ -1,18 +1,14 @@
 {
-  "name": "demo-node-app",
+  "name": "gradual-fix-node-app",
   "version": "1.0.0",
-  "description": "A simple node app to demonstrate Snyk scanning capabilities",
-  "main": "index.js",
+  "description": "A demo Node.js Express app for gradual vulnerability fixes",
+  "main": "app.js",
   "scripts": {
-    "test": "./node_modules/.bin/mocha ./test/test.js"
+    "start": "node app.js"
   },
-  "author": "V G",
-  "license": "ISC",
   "dependencies": {
-    "express": "^4.19.2"
-  },
-  "devDependencies": {
-    "mocha": "^9.1.1",
-    "supertest": "^6.1.6"
+    "express": "^4.19.2",
+    "lodash": "^4.17.21",
+    "debug": "^4.3.5"
   }
 }
