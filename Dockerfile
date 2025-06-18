@@ -1,23 +1,29 @@
-# Dockerfile: gradual-fix-node-app/Dockerfile
+# Dockerfile: user-dep-fix-node-app/Dockerfile
 
 # 1. Use a recent but not the absolute latest minor version of Node.js LTS (Bookworm based)
-#    Using a valid, specific minor version like 20.11.0 to demonstrate fixes.
 FROM node:20.11.1-bookworm-slim
 
 # 2. Set working directory
 WORKDIR /app
 
-# 3. Copy package.json and package-lock.json first to leverage Docker cache
+# 3. **USER INSTRUCTION: Install a potentially vulnerable package (curl)**
+#    We assume the version of curl installed by 'apt-get install curl' in this specific
+#    base image (20.11.0-bookworm-slim) will trigger a Snyk vulnerability.
+RUN apt-get update && \
+    apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# 4. Copy package.json and package-lock.json
 COPY package*.json ./
 
-# 4. Install Node.js dependencies (these are assumed non-vulnerable for this demo)
+# 5. Install Node.js dependencies
 RUN npm install
 
-# 5. Copy the rest of the application code
+# 6. Copy the rest of the application code
 COPY . .
 
-# 6. Expose the port
+# 7. Expose the port
 EXPOSE 8080
 
-# 7. Start the application
+# 8. Start the application
 CMD ["npm", "start"]
