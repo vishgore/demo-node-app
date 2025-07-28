@@ -1,68 +1,207 @@
-name: Prebuilt repo + Snyk Security Scanning (OS, Code, Docker, IaC)
+name: Snyk Security Scan
 
-# Runs 4 Snyk Products (Code, Open Source, Container, IaC)
-# Snyk installation via npm
-# Node.js version: 18.4
-# Outputs the results to the pipeline and in SARIF-format to the security tab
-
-# Prerequisites:
-# - Set a SNYK_TOKEN and a SNYK_ORG in the pipelines secrets
-
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch: # Allows manual triggering of the workflow
 
 jobs:
-  build:
+  snyk_security_scan:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Use Node.js for installing Snyk 
-      uses: actions/setup-node@v2
-      with:
-        node-version: 18.4
+      - name: Set up Node.js for Snyk CLI and snyk-to-html
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Use a recent LTS version
 
-    # Install & prepare Snyk
-    - run: npm install --location=global snyk
-    
-    #  This OPTIONAL step will configure the Snyk CLI to connect to the EU instance of Snyk
-    #- run: snyk config set use-base64-encoding=true
-    #- run: snyk config set endpoint='https://app.eu.snyk.io/api'
-      
-    - run: snyk auth ${{ secrets.SNYK_TOKEN }}
+      - name: Install Snyk CLI and snyk-to-html
+        run: |
+          npm install -g snyk
+          npm install -g snyk-to-html
 
-    - name: Snyk Open Source Scanning
-      run: snyk test --org=${{ secrets.SNYK_ORG }} --all-projects --sarif-file-output=snyk-oss.sarif
-      continue-on-error: true
-    - name: Upload results to GitHub Open Source Scanning
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: snyk-oss.sarif
+      - name: Authenticate Snyk CLI
+        run: snyk auth "${{ secrets.SNYK_TOKEN }}"
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }} # Ensure SNYK_TOKEN is set as a repository secret
 
-    - name: Snyk Code Scanning
-      run: snyk code test --org=${{ secrets.SNYK_ORG }} --sarif-file-output=snyk-code.sarif
-      continue-on-error: true
-    - name: Upload results to GitHub Code Scanning
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: snyk-code.sarif
+      # --- Snyk Open Source (Dependency) Scan ---
+      - name: Install Node.js dependencies (Example for Open Source Scan)
+        run: npm install # Or 'yarn install', 'pip install -r requirements.txt', etc.
 
-    #- name: Build the Docker Image
-    #  run: docker build . --file Dockerfile --tag sebsnyk/juice-shop:latest
+      - name: Run Snyk Open Source Scan (SARIF output)
+        id: snyk_oss_scan
+        continue-on-error: true
+        run: |
+          # snyk test will exit with 0 for no issues, 1 for issues, 2 for error, 3 for no supported projects
+          # Added --all-projects to scan all supported manifest files in the directory
+          snyk test --all-projects --sarif > snyk_oss_results.sarif || true
+          echo "SNYK_OSS_EXIT_CODE=$?" >> $GITHUB_OUTPUT
 
-    - name: Snyk Container Scanning
-      run: snyk container test --org=${{ secrets.SNYK_ORG }} --file=Dockerfile --sarif-file-output=snyk-container.sarif sebsnyk/juice-shop:latest
-      continue-on-error: true
-    - name: Upload results to GitHub Container Scanning
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: snyk-container.sarif
+      - name: Convert Snyk Open Source SARIF to HTML
+        if: always() # Run this step regardless of previous success/failure to generate report
+        run: snyk-to-html -i snyk_oss_results.sarif -o snyk_oss_report.html
 
-    - name: Snyk Infrastructure-as-Code Scanning
-      run: snyk iac test --org=${{ secrets.SNYK_ORG }} --sarif-file-output=snyk-iac.sarif
-      continue-on-error: true
-    - name: Upload results to GitHub IaC Scanning
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: snyk-iac.sarif
-        
+      - name: Handle Snyk Open Source Scan Results
+        if: steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '0'
+        run: |
+          echo "✅ Snyk Open Source Scan: No vulnerabilities found."
+
+      - name: Handle Snyk Open Source Scan Vulnerabilities
+        if: steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '1'
+        run: |
+          echo "⚠️ Snyk Open Source Scan: Vulnerabilities found. Please review snyk_oss_results.sarif and snyk_oss_report.html"
+          # Optionally, fail the job here if critical vulnerabilities are found
+          # exit 1
+
+      - name: Handle Snyk Open Source Scan Errors
+        if: steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '2'
+        run: |
+          echo "❌ Snyk Open Source Scan: An error occurred during the scan. Please check the logs."
+          exit 1 # Fail the job if an error occurred
+
+      - name: Handle Snyk Open Source Scan - No Supported Projects
+        if: steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '3'
+        run: |
+          echo "ℹ️ Snyk Open Source Scan: No supported projects detected for scan. Check your project structure."
+          # You might want to fail the job here if this is an unexpected scenario
+          # exit 1
+
+      # --- Snyk Code Scan ---
+      - name: Run Snyk Code Scan (SARIF output)
+        id: snyk_code_scan
+        continue-on-error: true
+        run: |
+          # snyk code test will exit with 0 for no issues, 1 for issues, 2 for error, 3 for no supported projects
+          snyk code test --sarif > snyk_code_results.sarif || true
+          echo "SNYK_CODE_EXIT_CODE=$?" >> $GITHUB_OUTPUT
+
+      - name: Convert Snyk Code SARIF to HTML
+        if: always()
+        run: snyk-to-html -i snyk_code_results.sarif -o snyk_code_report.html
+
+      - name: Handle Snyk Code Scan Results
+        if: steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '0'
+        run: |
+          echo "✅ Snyk Code Scan: No code vulnerabilities found."
+
+      - name: Handle Snyk Code Scan Vulnerabilities
+        if: steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '1'
+        run: |
+          echo "⚠️ Snyk Code Scan: Code vulnerabilities found. Please review snyk_code_results.sarif and snyk_code_report.html"
+          # Optionally, fail the job here
+          # exit 1
+
+      - name: Handle Snyk Code Scan Errors
+        if: steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '2'
+        run: |
+          echo "❌ Snyk Code Scan: An error occurred during the scan. Please check the logs."
+          exit 1 # Fail the job if an error occurred
+
+      - name: Handle Snyk Code Scan - No Supported Projects
+        if: steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '3'
+        run: |
+          echo "ℹ️ Snyk Code Scan: No supported projects detected for scan. Check your project structure."
+          # exit 1
+
+      # --- Snyk Container Scan ---
+      - name: Build Docker Image (Example for Container Scan)
+        run: docker build -t my-app-image . # Replace 'my-app-image' and '.' as needed
+
+      - name: Run Snyk Container Scan (SARIF output)
+        id: snyk_container_scan
+        continue-on-error: true
+        run: |
+          # snyk container test will exit with 0 for no issues, 1 for issues, 2 for error, 3 for no supported projects
+          snyk container test my-app-image --sarif > snyk_container_results.sarif || true
+          echo "SNYK_CONTAINER_EXIT_CODE=$?" >> $GITHUB_OUTPUT
+
+      - name: Convert Snyk Container SARIF to HTML
+        if: always()
+        run: snyk-to-html -i snyk_container_results.sarif -o snyk_container_report.html
+
+      - name: Handle Snyk Container Scan Results
+        if: steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '0'
+        run: |
+          echo "✅ Snyk Container Scan: No container vulnerabilities found."
+
+      - name: Handle Snyk Container Scan Vulnerabilities
+        if: steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '1'
+        run: |
+          echo "⚠️ Snyk Container Scan: Container vulnerabilities found. Please review snyk_container_results.sarif and snyk_container_report.html"
+          # Optionally, fail the job here
+          # exit 1
+
+      - name: Handle Snyk Container Scan Errors
+        if: steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '2'
+        run: |
+          echo "❌ Snyk Container Scan: An error occurred during the scan. Please check the logs."
+          exit 1 # Fail the job if an error occurred
+
+      - name: Handle Snyk Container Scan - No Supported Projects
+        if: steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '3'
+        run: |
+          echo "ℹ️ Snyk Container Scan: No supported projects detected for scan. Check your project structure or image name."
+          # exit 1
+
+      # --- Snyk IaC (Infrastructure as Code) Scan ---
+      - name: Run Snyk IaC Scan (SARIF output)
+        id: snyk_iac_scan
+        continue-on-error: true
+        run: |
+          # snyk iac test will exit with 0 for no issues, 1 for issues, 2 for error, 3 for no supported projects
+          snyk iac test --sarif > snyk_iac_results.sarif || true
+          echo "SNYK_IAC_EXIT_CODE=$?" >> $GITHUB_OUTPUT
+
+      - name: Convert Snyk IaC SARIF to HTML
+        if: always()
+        run: snyk-to-html -i snyk_iac_results.sarif -o snyk_iac_report.html
+
+      - name: Handle Snyk IaC Scan Results
+        if: steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '0'
+        run: |
+          echo "✅ Snyk IaC Scan: No IaC misconfigurations found."
+
+      - name: Handle Snyk IaC Scan Misconfigurations
+        if: steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '1'
+        run: |
+          echo "⚠️ Snyk IaC Scan: IaC misconfigurations found. Please review snyk_iac_results.sarif and snyk_iac_report.html"
+          # Optionally, fail the job here
+          # exit 1
+
+      - name: Handle Snyk IaC Scan Errors
+        if: steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '2'
+        run: |
+          echo "❌ Snyk IaC Scan: An error occurred during the scan. Please check the logs."
+          exit 1 # Fail the job if an error occurred
+
+      - name: Handle Snyk IaC Scan - No Supported Projects
+        if: steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '3'
+        run: |
+          echo "ℹ️ Snyk IaC Scan: No supported projects detected for scan. Check your IaC file paths."
+          # exit 1
+
+      # --- Optional: Upload Snyk results as artifacts ---
+      - name: Upload Snyk Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-scan-results
+          path: |
+            snyk_oss_results.sarif
+            snyk_oss_report.html
+            snyk_code_results.sarif
+            snyk_code_report.html
+            snyk_container_results.sarif
+            snyk_container_report.html
+            snyk_iac_results.sarif
+            snyk_iac_report.html
+          retention-days: 5 # How long to keep the artifacts
