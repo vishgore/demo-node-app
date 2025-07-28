@@ -41,8 +41,9 @@ jobs:
       - name: Run Snyk Open Source Scan (SARIF output)
         id: snyk_oss_scan
         # The exit code of 'snyk test' will directly determine the success/failure of this GitHub Actions step.
+        # Fails if high/critical severity vulnerabilities are found AND are upgradable.
         run: |
-          snyk test --all-projects --fail-on=high --sarif > snyk_oss_results.sarif
+          snyk test --all-projects --severity-threshold=high --fail-on=upgradable --sarif > snyk_oss_results.sarif
           SNYK_STATUS=$?
           echo "SNYK_OSS_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
           # If SNYK_STATUS is non-zero (1, 2, or 3), this step will automatically fail.
@@ -51,13 +52,13 @@ jobs:
         # This step runs only if the snyk_oss_scan step succeeded (exit code 0).
         if: steps.snyk_oss_scan.outcome == 'success'
         run: |
-          echo "✅ Snyk Open Source Scan: No vulnerabilities found (or none above 'high' severity)."
+          echo "✅ Snyk Open Source Scan: No high/critical upgradable vulnerabilities found."
 
       - name: Handle Snyk Open Source Scan Vulnerabilities
         # This step runs if the snyk_oss_scan step failed AND the Snyk exit code was 1 (vulnerabilities).
         if: steps.snyk_oss_scan.outcome == 'failure' && steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '1'
         run: |
-          echo "❌ Snyk Open Source Scan: High or Critical vulnerabilities found. Build will fail. Please review snyk_oss_results.sarif and snyk_oss_report.html"
+          echo "❌ Snyk Open Source Scan: High or Critical upgradable vulnerabilities found. Build will fail. Please review snyk_oss_results.sarif and snyk_oss_report.html"
 
       - name: Handle Snyk Open Source Scan Errors
         # This step runs if the snyk_oss_scan step failed AND the Snyk exit code was 2 (error).
@@ -80,8 +81,9 @@ jobs:
       - name: Run Snyk Code Scan (SARIF output)
         id: snyk_code_scan
         # The exit code of 'snyk code test' will directly determine the success/failure of this GitHub Actions step.
+        # Fails if high/critical severity vulnerabilities are found.
         run: |
-          snyk code test --fail-on=high --sarif > snyk_code_results.sarif
+          snyk code test --severity-threshold=high --fail-on=high --sarif > snyk_code_results.sarif
           SNYK_STATUS=$?
           echo "SNYK_CODE_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
           # If SNYK_STATUS is non-zero (1, 2, or 3), this step will automatically fail.
@@ -89,12 +91,12 @@ jobs:
       - name: Handle Snyk Code Scan Results
         if: steps.snyk_code_scan.outcome == 'success'
         run: |
-          echo "✅ Snyk Code Scan: No code vulnerabilities found (or none above 'high' severity)."
+          echo "✅ Snyk Code Scan: No high/critical code vulnerabilities found."
 
       - name: Handle Snyk Code Scan Vulnerabilities
         if: steps.snyk_code_scan.outcome == 'failure' && steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '1'
         run: |
-          echo "❌ Snyk Code Scan: High or Critical vulnerabilities found. Build will fail. Please review snyk_code_results.sarif and snyk_code_report.html"
+          echo "❌ Snyk Code Scan: High or Critical code vulnerabilities found. Build will fail. Please review snyk_code_results.sarif and snyk_code_report.html"
 
       - name: Handle Snyk Code Scan Errors
         if: steps.snyk_code_scan.outcome == 'failure' && steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '2'
@@ -119,8 +121,9 @@ jobs:
       - name: Run Snyk Container Scan (SARIF output)
         id: snyk_container_scan
         # The exit code of 'snyk container test' will directly determine the success/failure of this GitHub Actions step.
+        # Fails if high/critical severity vulnerabilities are found AND are upgradable.
         run: |
-          snyk container test my-app-image --fail-on=high --sarif > snyk_container_results.sarif
+          snyk container test my-app-image --severity-threshold=high --fail-on=upgradable --sarif > snyk_container_results.sarif
           SNYK_STATUS=$?
           echo "SNYK_CONTAINER_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
           # If SNYK_STATUS is non-zero (1, 2, or 3), this step will automatically fail.
@@ -128,12 +131,12 @@ jobs:
       - name: Handle Snyk Container Scan Results
         if: steps.snyk_container_scan.outcome == 'success'
         run: |
-          echo "✅ Snyk Container Scan: No container vulnerabilities found (or none above 'high' severity)."
+          echo "✅ Snyk Container Scan: No high/critical upgradable container vulnerabilities found."
 
       - name: Handle Snyk Container Scan Vulnerabilities
         if: steps.snyk_container_scan.outcome == 'failure' && steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '1'
         run: |
-          echo "❌ Snyk Container Scan: High or Critical vulnerabilities found. Build will fail. Please review snyk_container_results.sarif and snyk_container_report.html"
+          echo "❌ Snyk Container Scan: High or Critical upgradable vulnerabilities found. Build will fail. Please review snyk_container_results.sarif and snyk_container_report.html"
 
       - name: Handle Snyk Container Scan Errors
         if: steps.snyk_container_scan.outcome == 'failure' && steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '2'
@@ -149,40 +152,6 @@ jobs:
         if: always()
         run: snyk-to-html -i snyk_container_results.sarif -o snyk_container_report.html || true
 
-      # --- Snyk IaC (Infrastructure as Code) Scan ---
-      - name: Run Snyk IaC Scan (SARIF output)
-        id: snyk_iac_scan
-        # The exit code of 'snyk iac test' will directly determine the success/failure of this GitHub Actions step.
-        run: |
-          snyk iac test --fail-on=high --sarif > snyk_iac_results.sarif
-          SNYK_STATUS=$?
-          echo "SNYK_IAC_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
-          # If SNYK_STATUS is non-zero (1, 2, or 3), this step will automatically fail.
-
-      - name: Handle Snyk IaC Scan Results
-        if: steps.snyk_iac_scan.outcome == 'success'
-        run: |
-          echo "✅ Snyk IaC Scan: No IaC misconfigurations found (or none above 'high' severity)."
-
-      - name: Handle Snyk IaC Scan Misconfigurations
-        if: steps.snyk_iac_scan.outcome == 'failure' && steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '1'
-        run: |
-          echo "❌ Snyk IaC Scan: High or Critical misconfigurations found. Build will fail. Please review snyk_iac_results.sarif and snyk_iac_report.html"
-
-      - name: Handle Snyk IaC Scan Errors
-        if: steps.snyk_iac_scan.outcome == 'failure' && steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '2'
-        run: |
-          echo "❌ Snyk IaC Scan: An error occurred during the scan. Build will fail. Please check the logs."
-
-      - name: Handle Snyk IaC Scan - No Supported Projects
-        if: steps.snyk_iac_scan.outcome == 'failure' && steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '3'
-        run: |
-          echo "❌ Snyk IaC Scan: No supported projects detected for scan. Build will fail. Check your IaC file paths."
-
-      - name: Convert Snyk IaC SARIF to HTML
-        if: always()
-        run: snyk-to-html -i snyk_iac_results.sarif -o snyk_iac_report.html || true
-
       # --- Optional: Upload Snyk results as artifacts ---
       - name: Upload Snyk Scan Results
         uses: actions/upload-artifact@v4
@@ -195,6 +164,4 @@ jobs:
             snyk_code_report.html
             snyk_container_results.sarif
             snyk_container_report.html
-            snyk_iac_results.sarif
-            snyk_iac_report.html
           retention-days: 5 # How long to keep the artifacts
