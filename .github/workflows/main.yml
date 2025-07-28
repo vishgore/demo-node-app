@@ -27,7 +27,7 @@ jobs:
       - name: Install Snyk CLI and snyk-to-html
         run: |
           npm install -g snyk
-          npm install -g snyk-to-html # Re-added snyk-to-html
+          npm install -g snyk-to-html
 
       - name: Authenticate Snyk CLI
         run: snyk auth "${{ secrets.SNYK_TOKEN }}"
@@ -50,7 +50,10 @@ jobs:
 
       - name: Convert Snyk Open Source JSON to HTML
         if: always()
-        run: snyk-to-html -i snyk_oss_results.json -o snyk_oss_report.html || true
+        run: |
+          echo "Checking snyk_oss_results.json before HTML conversion:"
+          ls -l snyk_oss_results.json # Diagnostic: Check if JSON file exists and its size
+          snyk-to-html -i snyk_oss_results.json -o snyk_oss_report.html || true
 
       # --- Snyk Code Scan ---
       - name: Run Snyk Code Scan (JSON output)
@@ -65,7 +68,10 @@ jobs:
 
       - name: Convert Snyk Code JSON to HTML
         if: always()
-        run: snyk-to-html -i snyk_code_results.json -o snyk_code_report.html || true
+        run: |
+          echo "Checking snyk_code_results.json before HTML conversion:"
+          ls -l snyk_code_results.json # Diagnostic: Check if JSON file exists and its size
+          snyk-to-html -i snyk_code_results.json -o snyk_code_report.html || true
 
       # --- Snyk Container Scan ---
       - name: Build Docker Image (Example for Container Scan)
@@ -83,7 +89,10 @@ jobs:
 
       - name: Convert Snyk Container JSON to HTML
         if: always()
-        run: snyk-to-html -i snyk_container_results.json -o snyk_container_report.html || true
+        run: |
+          echo "Checking snyk_container_results.json before HTML conversion:"
+          ls -l snyk_container_results.json # Diagnostic: Check if JSON file exists and its size
+          snyk-to-html -i snyk_container_results.json -o snyk_container_report.html || true
 
       # --- Upload Snyk results as artifacts ---
       - name: Upload Snyk Scan Results
@@ -92,11 +101,11 @@ jobs:
           name: snyk-scan-results
           path: |
             snyk_oss_results.json
-            snyk_oss_report.html # Added HTML report
+            snyk_oss_report.html
             snyk_code_results.json
-            snyk_code_report.html # Added HTML report
+            snyk_code_report.html
             snyk_container_results.json
-            snyk_container_report.html # Added HTML report
+            snyk_container_report.html
           retention-days: 5
 
       # --- Consolidated Snyk Scan Reporting ---
@@ -106,45 +115,45 @@ jobs:
           echo "--- Snyk Open Source Scan Report ---"
           OSS_EXIT_CODE="${{ steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE }}"
           if [[ "$OSS_EXIT_CODE" == "0" ]]; then
-            echo "✅ No high/critical upgradable vulnerabilities found."
+            echo "✅ Snyk Open Source Scan: No high/critical upgradable vulnerabilities found."
           elif [[ "$OSS_EXIT_CODE" == "1" ]]; then
-            echo "❌ High or Critical upgradable vulnerabilities found. Please review snyk_oss_results.json and snyk_oss_report.html"
+            echo "❌ Snyk Open Source Scan: High or Critical upgradable vulnerabilities found. Review snyk_oss_results.json and snyk_oss_report.html for details."
           elif [[ "$OSS_EXIT_CODE" == "2" ]]; then
-            echo "❌ An error occurred during the scan. Please check the logs."
+            echo "❌ Snyk Open Source Scan: An error occurred (exit code 2). Please check the workflow logs for details."
           elif [[ "$OSS_EXIT_CODE" == "3" ]]; then
-            echo "❌ No supported projects detected for scan. Check your project structure."
+            echo "❌ Snyk Open Source Scan: No supported projects detected (exit code 3). Check your project structure and logs."
           else
-            echo "❓ Unknown exit code for Open Source Scan: ${OSS_EXIT_CODE:-'Not Set'}"
+            echo "❓ Snyk Open Source Scan: Unknown exit code: ${OSS_EXIT_CODE:-'Not Set'}. Please check the workflow logs."
           fi
 
           echo ""
           echo "--- Snyk Code Scan Report ---"
           CODE_EXIT_CODE="${{ steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE }}"
           if [[ "$CODE_EXIT_CODE" == "0" ]]; then
-            echo "✅ No high/critical code vulnerabilities found."
+            echo "✅ Snyk Code Scan: No high/critical code vulnerabilities found."
           elif [[ "$CODE_EXIT_CODE" == "1" ]]; then
-            echo "❌ High or Critical code vulnerabilities found. Please review snyk_code_results.json and snyk_code_report.html"
+            echo "❌ Snyk Code Scan: High or Critical code vulnerabilities found. Review snyk_code_results.json and snyk_code_report.html for details."
           elif [[ "$CODE_EXIT_CODE" == "2" ]]; then
-            echo "❌ An error occurred during the scan. Please check the logs."
+            echo "❌ Snyk Code Scan: An error occurred (exit code 2). Please check the workflow logs for details."
           elif [[ "$CODE_EXIT_CODE" == "3" ]]; then
-            echo "❌ No supported projects detected for scan. Check your project structure."
+            echo "❌ Snyk Code Scan: No supported projects detected (exit code 3). Check your project structure and logs."
           else
-            echo "❓ Unknown exit code for Code Scan: ${CODE_EXIT_CODE:-'Not Set'}"
+            echo "❓ Snyk Code Scan: Unknown exit code: ${CODE_EXIT_CODE:-'Not Set'}. Please check the workflow logs."
           fi
 
           echo ""
           echo "--- Snyk Container Scan Report ---"
           CONTAINER_EXIT_CODE="${{ steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE }}"
           if [[ "$CONTAINER_EXIT_CODE" == "0" ]]; then
-            echo "✅ No high/critical upgradable container vulnerabilities found."
+            echo "✅ Snyk Container Scan: No high/critical upgradable container vulnerabilities found."
           elif [[ "$CONTAINER_EXIT_CODE" == "1" ]]; then
-            echo "❌ High or Critical upgradable vulnerabilities found. Please review snyk_container_results.json and snyk_container_report.html"
+            echo "❌ Snyk Container Scan: High or Critical upgradable vulnerabilities found. Review snyk_container_results.json and snyk_container_report.html for details."
           elif [[ "$CONTAINER_EXIT_CODE" == "2" ]]; then
-            echo "❌ An error occurred during the scan. Please check the logs."
+            echo "❌ Snyk Container Scan: An error occurred (exit code 2). Please check the workflow logs for details."
           elif [[ "$CONTAINER_EXIT_CODE" == "3" ]]; then
-            echo "❌ No supported projects detected for scan. Check your project structure or image name."
+            echo "❌ Snyk Container Scan: No supported projects detected (exit code 3). Check your project structure or image name and logs."
           else
-            echo "❓ Unknown exit code for Container Scan: ${CONTAINER_EXIT_CODE:-'Not Set'}"
+            echo "❓ Snyk Container Scan: Unknown exit code: ${CONTAINER_EXIT_CODE:-'Not Set'}. Please check the workflow logs."
           fi
 
       # --- Final Snyk Scan Status Check ---
@@ -154,15 +163,15 @@ jobs:
           CODE_EXIT_CODE="${{ steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE }}"
           CONTAINER_EXIT_CODE="${{ steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE }}"
 
-          echo "OSS Scan Exit Code: ${OSS_EXIT_CODE:-'Not Set'}"
-          echo "Code Scan Exit Code: ${CODE_EXIT_CODE:-'Not Set'}"
-          echo "Container Scan Exit Code: ${CONTAINER_EXIT_CODE:-'Not Set'}"
+          echo "Final OSS Scan Exit Code: ${OSS_EXIT_CODE:-'Not Set'}"
+          echo "Final Code Scan Exit Code: ${CODE_EXIT_CODE:-'Not Set'}"
+          echo "Final Container Scan Exit Code: ${CONTAINER_EXIT_CODE:-'Not Set'}"
 
           # Fail the job if any scan had a non-zero exit code (1, 2, or 3)
-          # Also, consider an empty or 'Not Set' code as a failure for the overall job
-          if [[ "$OSS_EXIT_CODE" != "0" && -n "$OSS_EXIT_CODE" || \
-                "$CODE_EXIT_CODE" != "0" && -n "$CODE_EXIT_CODE" || \
-                "$CONTAINER_EXIT_CODE" != "0" && -n "$CONTAINER_EXIT_CODE" ]]; then
+          # Using default '1' if variable is unset/null to ensure failure if output was not captured.
+          if [[ "${OSS_EXIT_CODE:-1}" != "0" || \
+                "${CODE_EXIT_CODE:-1}" != "0" || \
+                "${CONTAINER_EXIT_CODE:-1}" != "0" ]]; then
             echo "One or more Snyk scans reported issues or errors. Failing the job."
             exit 1
           else
