@@ -82,7 +82,9 @@ jobs:
         # Allow this step to continue on error, but capture the Snyk exit code.
         continue-on-error: true
         run: |
-          snyk code test --severity-threshold=high --fail-on=high --sarif > snyk_code_results.sarif
+          # Removed --fail-on=high as it's not supported for snyk code test.
+          # Snyk Code will still exit with 1 if high/critical vulnerabilities are found.
+          snyk code test --severity-threshold=high --sarif > snyk_code_results.sarif
           SNYK_STATUS=$?
           echo "SNYK_CODE_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
 
