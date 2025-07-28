@@ -47,30 +47,6 @@ jobs:
           SNYK_STATUS=$?
           echo "SNYK_OSS_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
 
-      - name: Handle Snyk Open Source Scan Results
-        # This step runs only if the snyk_oss_scan step succeeded (exit code 0).
-        if: steps.snyk_oss_scan.outcome == 'success'
-        run: |
-          echo "✅ Snyk Open Source Scan: No high/critical upgradable vulnerabilities found."
-
-      - name: Handle Snyk Open Source Scan Vulnerabilities
-        # This step runs if the snyk_oss_scan step failed AND the Snyk exit code was 1 (vulnerabilities).
-        if: steps.snyk_oss_scan.outcome == 'failure' && steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '1'
-        run: |
-          echo "❌ Snyk Open Source Scan: High or Critical upgradable vulnerabilities found. Please review snyk_oss_results.sarif and snyk_oss_report.html"
-
-      - name: Handle Snyk Open Source Scan Errors
-        # This step runs if the snyk_oss_scan step failed AND the Snyk exit code was 2 (error).
-        if: steps.snyk_oss_scan.outcome == 'failure' && steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '2'
-        run: |
-          echo "❌ Snyk Open Source Scan: An error occurred during the scan. Please check the logs."
-
-      - name: Handle Snyk Open Source Scan - No Supported Projects
-        # This step runs if the snyk_oss_scan step failed AND the Snyk exit code was 3 (no supported projects).
-        if: steps.snyk_oss_scan.outcome == 'failure' && steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '3'
-        run: |
-          echo "❌ Snyk Open Source Scan: No supported projects detected for scan. Check your project structure."
-
       - name: Convert Snyk Open Source SARIF to HTML
         # Always attempt to convert to HTML if the scan step completed (success or failure).
         if: always()
@@ -82,31 +58,10 @@ jobs:
         # Allow this step to continue on error, but capture the Snyk exit code.
         continue-on-error: true
         run: |
-          # Removed --fail-on=high as it's not supported for snyk code test.
           # Snyk Code will still exit with 1 if high/critical vulnerabilities are found.
           snyk code test --severity-threshold=high --sarif > snyk_code_results.sarif
           SNYK_STATUS=$?
           echo "SNYK_CODE_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
-
-      - name: Handle Snyk Code Scan Results
-        if: steps.snyk_code_scan.outcome == 'success'
-        run: |
-          echo "✅ Snyk Code Scan: No high/critical code vulnerabilities found."
-
-      - name: Handle Snyk Code Scan Vulnerabilities
-        if: steps.snyk_code_scan.outcome == 'failure' && steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '1'
-        run: |
-          echo "❌ Snyk Code Scan: High or Critical code vulnerabilities found. Please review snyk_code_results.sarif and snyk_code_report.html"
-
-      - name: Handle Snyk Code Scan Errors
-        if: steps.snyk_code_scan.outcome == 'failure' && steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '2'
-        run: |
-          echo "❌ Snyk Code Scan: An error occurred during the scan. Please check the logs."
-
-      - name: Handle Snyk Code Scan - No Supported Projects
-        if: steps.snyk_code_scan.outcome == 'failure' && steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '3'
-        run: |
-          echo "❌ Snyk Code Scan: No supported projects detected for scan. Check your project structure."
 
       - name: Convert Snyk Code SARIF to HTML
         if: always()
@@ -127,26 +82,6 @@ jobs:
           SNYK_STATUS=$?
           echo "SNYK_CONTAINER_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
 
-      - name: Handle Snyk Container Scan Results
-        if: steps.snyk_container_scan.outcome == 'success'
-        run: |
-          echo "✅ Snyk Container Scan: No high/critical upgradable container vulnerabilities found."
-
-      - name: Handle Snyk Container Scan Vulnerabilities
-        if: steps.snyk_container_scan.outcome == 'failure' && steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '1'
-        run: |
-          echo "❌ Snyk Container Scan: High or Critical upgradable vulnerabilities found. Please review snyk_container_results.sarif and snyk_container_report.html"
-
-      - name: Handle Snyk Container Scan Errors
-        if: steps.snyk_container_scan.outcome == 'failure' && steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '2'
-        run: |
-          echo "❌ Snyk Container Scan: An error occurred during the scan. Please check the logs."
-
-      - name: Handle Snyk Container Scan - No Supported Projects
-        if: steps.snyk_container_scan.outcome == 'failure' && steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '3'
-        run: |
-          echo "❌ Snyk Container Scan: No supported projects detected for scan. Check your project structure or image name."
-
       - name: Convert Snyk Container SARIF to HTML
         if: always()
         run: snyk-to-html -i snyk_container_results.sarif -o snyk_container_report.html || true
@@ -164,6 +99,54 @@ jobs:
             snyk_container_results.sarif
             snyk_container_report.html
           retention-days: 5 # How long to keep the artifacts
+
+      # --- Consolidated Snyk Scan Reporting ---
+      - name: Consolidated Snyk Scan Reporting
+        if: always() # Always run to report on all scans
+        run: |
+          echo "--- Snyk Open Source Scan Report ---"
+          OSS_EXIT_CODE="${{ steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE }}"
+          if [[ "$OSS_EXIT_CODE" == "0" ]]; then
+            echo "✅ No high/critical upgradable vulnerabilities found."
+          elif [[ "$OSS_EXIT_CODE" == "1" ]]; then
+            echo "❌ High or Critical upgradable vulnerabilities found. Please review snyk_oss_results.sarif and snyk_oss_report.html"
+          elif [[ "$OSS_EXIT_CODE" == "2" ]]; then
+            echo "❌ An error occurred during the scan. Please check the logs."
+          elif [[ "$OSS_EXIT_CODE" == "3" ]]; then
+            echo "❌ No supported projects detected for scan. Check your project structure."
+          else
+            echo "❓ Unknown exit code for Open Source Scan: $OSS_EXIT_CODE"
+          fi
+
+          echo "" # Newline for separation
+          echo "--- Snyk Code Scan Report ---"
+          CODE_EXIT_CODE="${{ steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE }}"
+          if [[ "$CODE_EXIT_CODE" == "0" ]]; then
+            echo "✅ No high/critical code vulnerabilities found."
+          elif [[ "$CODE_EXIT_CODE" == "1" ]]; then
+            echo "❌ High or Critical code vulnerabilities found. Please review snyk_code_results.sarif and snyk_code_report.html"
+          elif [[ "$CODE_EXIT_CODE" == "2" ]]; then
+            echo "❌ An error occurred during the scan. Please check the logs."
+          elif [[ "$CODE_EXIT_CODE" == "3" ]]; then
+            echo "❌ No supported projects detected for scan. Check your project structure."
+          else
+            echo "❓ Unknown exit code for Code Scan: $CODE_EXIT_CODE"
+          fi
+
+          echo "" # Newline for separation
+          echo "--- Snyk Container Scan Report ---"
+          CONTAINER_EXIT_CODE="${{ steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE }}"
+          if [[ "$CONTAINER_EXIT_CODE" == "0" ]]; then
+            echo "✅ No high/critical upgradable container vulnerabilities found."
+          elif [[ "$CONTAINER_EXIT_CODE" == "1" ]]; then
+            echo "❌ High or Critical upgradable vulnerabilities found. Please review snyk_container_results.sarif and snyk_container_report.html"
+          elif [[ "$CONTAINER_EXIT_CODE" == "2" ]]; then
+            echo "❌ An error occurred during the scan. Please check the logs."
+          elif [[ "$CONTAINER_EXIT_CODE" == "3" ]]; then
+            echo "❌ No supported projects detected for scan. Check your project structure or image name."
+          else
+            echo "❓ Unknown exit code for Container Scan: $CONTAINER_EXIT_CODE"
+          fi
 
       # --- Final Snyk Scan Status Check ---
       - name: Final Snyk Scan Status Check
