@@ -53,7 +53,8 @@ jobs:
           fi
 
       - name: Convert Snyk Open Source SARIF to HTML
-        if: always() # Run this step regardless of previous success/failure to generate report
+        # Only run if Snyk scan completed successfully (0) or found vulnerabilities (1)
+        if: steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '0' || steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '1'
         run: snyk-to-html -i snyk_oss_results.sarif -o snyk_oss_report.html
 
       - name: Handle Snyk Open Source Scan Results
@@ -93,7 +94,7 @@ jobs:
           fi
 
       - name: Convert Snyk Code SARIF to HTML
-        if: always()
+        if: steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '0' || steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '1'
         run: snyk-to-html -i snyk_code_results.sarif -o snyk_code_report.html
 
       - name: Handle Snyk Code Scan Results
@@ -136,7 +137,7 @@ jobs:
           fi
 
       - name: Convert Snyk Container SARIF to HTML
-        if: always()
+        if: steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '0' || steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '1'
         run: snyk-to-html -i snyk_container_results.sarif -o snyk_container_report.html
 
       - name: Handle Snyk Container Scan Results
@@ -176,7 +177,7 @@ jobs:
           fi
 
       - name: Convert Snyk IaC SARIF to HTML
-        if: always()
+        if: steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '0' || steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '1'
         run: snyk-to-html -i snyk_iac_results.sarif -o snyk_iac_report.html
 
       - name: Handle Snyk IaC Scan Results
