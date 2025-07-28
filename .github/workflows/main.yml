@@ -40,18 +40,22 @@ jobs:
         id: snyk_oss_scan
         continue-on-error: true
         run: |
+          set +e # Do not exit immediately if a command fails
           snyk test --all-projects --severity-threshold=high --fail-on=upgradable --json > snyk_oss_results.json
           SNYK_STATUS=$?
           echo "SNYK_OSS_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
+          set -e # Re-enable exit on error for subsequent commands in this step
 
       # --- Snyk Code Scan ---
       - name: Run Snyk Code Scan (JSON output)
         id: snyk_code_scan
         continue-on-error: true
         run: |
+          set +e # Do not exit immediately if a command fails
           snyk code test --severity-threshold=high --json > snyk_code_results.json
           SNYK_STATUS=$?
           echo "SNYK_CODE_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
+          set -e # Re-enable exit on error for subsequent commands in this step
 
       # --- Snyk Container Scan ---
       - name: Build Docker Image (Example for Container Scan)
@@ -61,9 +65,11 @@ jobs:
         id: snyk_container_scan
         continue-on-error: true
         run: |
+          set +e # Do not exit immediately if a command fails
           snyk container test my-app-image --severity-threshold=high --fail-on=upgradable --json > snyk_container_results.json
           SNYK_STATUS=$?
           echo "SNYK_CONTAINER_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
+          set -e # Re-enable exit on error for subsequent commands in this step
 
       # --- Upload Snyk results as artifacts ---
       - name: Upload Snyk Scan Results
@@ -91,7 +97,7 @@ jobs:
           elif [[ "$OSS_EXIT_CODE" == "3" ]]; then
             echo "❌ No supported projects detected for scan. Check your project structure."
           else
-            echo "❓ Unknown exit code for Open Source Scan: $OSS_EXIT_CODE"
+            echo "❓ Unknown exit code for Open Source Scan: ${OSS_EXIT_CODE:-'Not Set'}" # Added fallback for clarity
           fi
 
           echo ""
@@ -106,7 +112,7 @@ jobs:
           elif [[ "$CODE_EXIT_CODE" == "3" ]]; then
             echo "❌ No supported projects detected for scan. Check your project structure."
           else
-            echo "❓ Unknown exit code for Code Scan: $CODE_EXIT_CODE"
+            echo "❓ Unknown exit code for Code Scan: ${CODE_EXIT_CODE:-'Not Set'}" # Added fallback for clarity
           fi
 
           echo ""
@@ -121,7 +127,7 @@ jobs:
           elif [[ "$CONTAINER_EXIT_CODE" == "3" ]]; then
             echo "❌ No supported projects detected for scan. Check your project structure or image name."
           else
-            echo "❓ Unknown exit code for Container Scan: $CONTAINER_EXIT_CODE"
+            echo "❓ Unknown exit code for Container Scan: ${CONTAINER_EXIT_CODE:-'Not Set'}" # Added fallback for clarity
           fi
 
       # --- Final Snyk Scan Status Check ---
@@ -131,11 +137,15 @@ jobs:
           CODE_EXIT_CODE="${{ steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE }}"
           CONTAINER_EXIT_CODE="${{ steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE }}"
 
-          echo "OSS Scan Exit Code: $OSS_EXIT_CODE"
-          echo "Code Scan Exit Code: $CODE_EXIT_CODE"
-          echo "Container Scan Exit Code: $CONTAINER_EXIT_CODE"
+          echo "OSS Scan Exit Code: ${OSS_EXIT_CODE:-'Not Set'}"
+          echo "Code Scan Exit Code: ${CODE_EXIT_CODE:-'Not Set'}"
+          echo "Container Scan Exit Code: ${CONTAINER_EXIT_CODE:-'Not Set'}"
 
-          if [[ "$OSS_EXIT_CODE" != "0" || "$CODE_EXIT_CODE" != "0" || "$CONTAINER_EXIT_CODE" != "0" ]]; then
+          # Fail the job if any scan had a non-zero exit code (1, 2, or 3)
+          # Also, consider an empty or 'Not Set' code as a failure for the overall job
+          if [[ "$OSS_EXIT_CODE" != "0" && -n "$OSS_EXIT_CODE" && "$OSS_EXIT_CODE" != "99" || \
+                "$CODE_EXIT_CODE" != "0" && -n "$CODE_EXIT_CODE" && "$CODE_EXIT_CODE" != "99" || \
+                "$CONTAINER_EXIT_CODE" != "0" && -n "$CONTAINER_EXIT_CODE" && "$CONTAINER_EXIT_CODE" != "99" ]]; then
             echo "One or more Snyk scans reported issues or errors. Failing the job."
             exit 1
           else
