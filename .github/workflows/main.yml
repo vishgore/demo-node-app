@@ -40,12 +40,17 @@ jobs:
 
       - name: Run Snyk Open Source Scan (SARIF output)
         id: snyk_oss_scan
-        continue-on-error: true
+        continue-on-error: true # Allow the step to proceed even if Snyk finds vulnerabilities (exit code 1)
         run: |
-          # snyk test will exit with 0 for no issues, 1 for issues, 2 for error, 3 for no supported projects
-          # Added --all-projects to scan all supported manifest files in the directory
-          snyk test --all-projects --sarif > snyk_oss_results.sarif || true
-          echo "SNYK_OSS_EXIT_CODE=$?" >> $GITHUB_OUTPUT
+          # Run snyk test, capture its exit code immediately, then write to GITHUB_OUTPUT.
+          # We explicitly exit with the Snyk status if it's an error (2) or no projects (3)
+          # so 'continue-on-error: true' only applies to vulnerabilities (1).
+          snyk test --all-projects --sarif > snyk_oss_results.sarif
+          SNYK_STATUS=$?
+          echo "SNYK_OSS_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
+          if [ "$SNYK_STATUS" -eq 2 ] || [ "$SNYK_STATUS" -eq 3 ]; then
+            exit "$SNYK_STATUS"
+          fi
 
       - name: Convert Snyk Open Source SARIF to HTML
         if: always() # Run this step regardless of previous success/failure to generate report
@@ -73,17 +78,19 @@ jobs:
         if: steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE == '3'
         run: |
           echo "ℹ️ Snyk Open Source Scan: No supported projects detected for scan. Check your project structure."
-          # You might want to fail the job here if this is an unexpected scenario
-          # exit 1
+          exit 1 # Fail the job if no supported projects are found
 
       # --- Snyk Code Scan ---
       - name: Run Snyk Code Scan (SARIF output)
         id: snyk_code_scan
         continue-on-error: true
         run: |
-          # snyk code test will exit with 0 for no issues, 1 for issues, 2 for error, 3 for no supported projects
-          snyk code test --sarif > snyk_code_results.sarif || true
-          echo "SNYK_CODE_EXIT_CODE=$?" >> $GITHUB_OUTPUT
+          snyk code test --sarif > snyk_code_results.sarif
+          SNYK_STATUS=$?
+          echo "SNYK_CODE_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
+          if [ "$SNYK_STATUS" -eq 2 ] || [ "$SNYK_STATUS" -eq 3 ]; then
+            exit "$SNYK_STATUS"
+          fi
 
       - name: Convert Snyk Code SARIF to HTML
         if: always()
@@ -111,7 +118,7 @@ jobs:
         if: steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE == '3'
         run: |
           echo "ℹ️ Snyk Code Scan: No supported projects detected for scan. Check your project structure."
-          # exit 1
+          exit 1 # Fail the job if no supported projects are found
 
       # --- Snyk Container Scan ---
       - name: Build Docker Image (Example for Container Scan)
@@ -121,9 +128,12 @@ jobs:
         id: snyk_container_scan
         continue-on-error: true
         run: |
-          # snyk container test will exit with 0 for no issues, 1 for issues, 2 for error, 3 for no supported projects
-          snyk container test my-app-image --sarif > snyk_container_results.sarif || true
-          echo "SNYK_CONTAINER_EXIT_CODE=$?" >> $GITHUB_OUTPUT
+          snyk container test my-app-image --sarif > snyk_container_results.sarif
+          SNYK_STATUS=$?
+          echo "SNYK_CONTAINER_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
+          if [ "$SNYK_STATUS" -eq 2 ] || [ "$SNYK_STATUS" -eq 3 ]; then
+            exit "$SNYK_STATUS"
+          fi
 
       - name: Convert Snyk Container SARIF to HTML
         if: always()
@@ -151,16 +161,19 @@ jobs:
         if: steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE == '3'
         run: |
           echo "ℹ️ Snyk Container Scan: No supported projects detected for scan. Check your project structure or image name."
-          # exit 1
+          exit 1 # Fail the job if no supported projects are found
 
       # --- Snyk IaC (Infrastructure as Code) Scan ---
       - name: Run Snyk IaC Scan (SARIF output)
         id: snyk_iac_scan
         continue-on-error: true
         run: |
-          # snyk iac test will exit with 0 for no issues, 1 for issues, 2 for error, 3 for no supported projects
-          snyk iac test --sarif > snyk_iac_results.sarif || true
-          echo "SNYK_IAC_EXIT_CODE=$?" >> $GITHUB_OUTPUT
+          snyk iac test --sarif > snyk_iac_results.sarif
+          SNYK_STATUS=$?
+          echo "SNYK_IAC_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
+          if [ "$SNYK_STATUS" -eq 2 ] || [ "$SNYK_STATUS" -eq 3 ]; then
+            exit "$SNYK_STATUS"
+          fi
 
       - name: Convert Snyk IaC SARIF to HTML
         if: always()
@@ -188,7 +201,7 @@ jobs:
         if: steps.snyk_iac_scan.outputs.SNYK_IAC_EXIT_CODE == '3'
         run: |
           echo "ℹ️ Snyk IaC Scan: No supported projects detected for scan. Check your IaC file paths."
-          # exit 1
+          exit 1 # Fail the job if no supported projects are found
 
       # --- Optional: Upload Snyk results as artifacts ---
       - name: Upload Snyk Scan Results
