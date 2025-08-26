@@ -13,5 +13,5 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          check-name: 'code/snyk (snyk-containers-test), security/snyk (snyk-containers-test)'
+          check-name: 'security/snyk (snyk-containers-test)'
           allowed-conclusions: 'success, skipped'
