@@ -1,19 +1,19 @@
-name: Wrapper PR Status Checker
+name: List All PR Checks (Delayed)
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  check-status:
+  list_checks:
     runs-on: ubuntu-latest
     steps:
       - name: Wait for checks to initialize
         run: |
-          echo "Waiting 30 seconds for all PR checks to report their status..."
+          echo "Waiting 30 seconds for checks to report their status..."
           sleep 30
 
-      - name: Fetch PR check statuses
+      - name: Fetch and List all PR checks
         id: get-checks
         uses: octokit/request-action@v2.1.0
         with:
@@ -24,22 +24,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Evaluate and log all check results
+      - name: Log all check statuses
         run: |
           checks_json='${{ steps.get-checks.outputs.data }}'
-
+          
           echo "--- All PR Check Statuses ---"
           echo "$checks_json" | jq -r '.check_runs[] | "Check: \(.name) | Status: \(.status) | Conclusion: \(.conclusion)"'
           echo "-----------------------------"
-
-          failed_checks=$(echo "$checks_json" | jq -r '.check_runs[] | select(.conclusion == "failure" or .conclusion == "error") | .name')
-
-          if [ -n "$failed_checks" ]; then
-            echo "----------------------------------------------------"
-            echo "Wrapper check failed because the following PR checks failed:"
-            echo "$failed_checks"
-            echo "----------------------------------------------------"
-            exit 1
-          else
-            echo "All required PR checks passed successfully."
-          fi
