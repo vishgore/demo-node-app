@@ -1,21 +1,17 @@
 name: Wrapper PR Status Checker
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 jobs:
   check-status:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for Snyk Code check to complete
-        uses: fountainhead/action-wait-for-check@v1.1.0
-        id: wait-for-snyk
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          checkName: 'code/snyk (snyk-containers-test)'
-          # You can add a timeout to prevent the workflow from waiting forever
-          # timeoutSeconds: 3600
+      - name: Wait for checks to initialize
+        run: |
+          echo "Waiting 30 seconds for all PR checks to report their status..."
+          sleep 30
 
       - name: Fetch PR check statuses
         id: get-checks
@@ -27,17 +23,17 @@ jobs:
           commit_sha: ${{ github.event.pull_request.head.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Evaluate and log all check results
         run: |
           checks_json='${{ steps.get-checks.outputs.data }}'
-          
+
           echo "--- All PR Check Statuses ---"
           echo "$checks_json" | jq -r '.check_runs[] | "Check: \(.name) | Status: \(.status) | Conclusion: \(.conclusion)"'
           echo "-----------------------------"
 
           failed_checks=$(echo "$checks_json" | jq -r '.check_runs[] | select(.conclusion == "failure" or .conclusion == "error") | .name')
-          
+
           if [ -n "$failed_checks" ]; then
             echo "----------------------------------------------------"
             echo "Wrapper check failed because the following PR checks failed:"
