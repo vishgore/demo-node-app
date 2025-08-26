@@ -1,5 +1,6 @@
 var express = require('express');
 var app = express();
+var { exec } = require('child_process');
 
 // 1. Insecure use of eval()
 app.get('/eval', function(req, res) {
@@ -38,6 +39,19 @@ app.get('/profile', function(req, res) {
     </body>
   </html>`); 
   // Usernames could contain malicious JavaScript 
+});
+
+// 5. Command Injection
+app.get('/execute', function(req, res) {
+  let command = req.query.cmd;
+  // This is highly insecure! User input is directly concatenated into the command
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`exec error: ${error}`);
+      return res.status(500).send(`{"error": "${error.message}"}`);
+    }
+    res.send(`{"output": "${stdout}"}`);
+  });
 });
 
 
