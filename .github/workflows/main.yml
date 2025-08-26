@@ -20,4 +20,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Listing checks for PR #${{ env.PR_NUMBER }}"
-          gh pr checks ${{ env.PR_NUMBER }} --json name,status,conclusion,startedAt,completedAt --jq '.[] | "Name: \(.name), Status: \(.status), Conclusion: \(.conclusion)"'
+          gh pr checks ${{ env.PR_NUMBER }} --json name,state,conclusion,startedAt,completedAt --jq '.[] | "Name: \(.name), State: \(.state), Conclusion: \(.conclusion)"'
