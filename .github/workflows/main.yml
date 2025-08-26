@@ -1,4 +1,4 @@
-name: Wrapper Check with Enhanced Logging
+name: Wrapper Check
 
 on:
   pull_request:
@@ -15,58 +15,59 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const ref = context.sha;
-            let checksAreComplete = false;
-            let allChecksPassed = true;
+            let statusChecks = null;
             let pollAttempts = 0;
             const maxPollAttempts = 60; // Max 5 minutes (60 * 5s)
-            let statusChecks = null; // Declare the variable here
 
-            while (!checksAreComplete && pollAttempts < maxPollAttempts) {
+            // Log the start of the script
+            console.log('✅ Wrapper script started. Fetching initial check status...');
+
+            // --- Polling loop to wait for all checks to complete ---
+            while (pollAttempts < maxPollAttempts) {
               const { data: currentStatusChecks } = await github.rest.checks.listForRef({
                 owner,
                 repo,
                 ref
               });
-              statusChecks = currentStatusChecks; // Assign the value inside the loop
-
+              statusChecks = currentStatusChecks;
+              
               console.log('--- Current PR Checks Status ---');
               statusChecks.check_runs.forEach(check => {
                 console.log(`- **${check.name}**: ${check.status} (${check.conclusion})`);
               });
 
-              // Check if all checks have a conclusion
+              // Filter for checks that are not yet completed
               const pendingChecks = statusChecks.check_runs.filter(
                 (check) => check.status !== 'completed'
               );
 
               if (pendingChecks.length === 0) {
-                checksAreComplete = true;
-              } else {
-                console.log(`\nWaiting for ${pendingChecks.length} checks to complete. Polling again in 5s...`);
-                pollAttempts++;
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                console.log('\nAll checks are completed. Exiting polling loop.');
+                break;
               }
+
+              console.log(`\nWaiting for ${pendingChecks.length} checks to complete. Polling again in 5s...`);
+              pollAttempts++;
+              await new Promise(resolve => setTimeout(resolve, 5000));
             }
             
-            if (!checksAreComplete) {
+            // --- Final check after the loop finishes or times out ---
+            if (pollAttempts >= maxPollAttempts) {
               core.setFailed('Timed out waiting for checks to complete.');
               return;
             }
 
             console.log('\n--- Final Check Summary ---');
             
+            // Look for any checks with a failure or stale conclusion
             const failedOrStaleChecks = statusChecks.check_runs.filter(
               (check) => check.conclusion === 'failure' || check.conclusion === 'stale'
             );
             
             if (failedOrStaleChecks.length > 0) {
-              console.log(`❌ Found ${failedOrStaleChecks.length} failed or stale checks.`);
+              console.log(`❌ Found ${failedOrStaleChecks.length} failed or stale checks. Merge is blocked.`);
               failedOrStaleChecks.forEach(check => console.log(`- **${check.name}**: ${check.conclusion}`));
-              allChecksPassed = false;
-            } else {
-              console.log('✅ All checks passed or were appropriately skipped.');
-            }
-            
-            if (!allChecksPassed) {
               core.setFailed('Some checks failed. Merge is blocked.');
+            } else {
+              console.log('✅ All required checks passed or were appropriately skipped.');
             }
