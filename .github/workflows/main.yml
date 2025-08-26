@@ -1,17 +1,51 @@
-name: Wrapper Check
+name: Check and Fail on PR Checks
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  check_all:
+  check_and_fail:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get PR number
+        id: get_pr_number
+        run: echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+
       - name: Wait for other checks to complete
-        uses: lewagon/wait-on-check-action@v1.4.0
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          check-name: 'code/snyk (snyk-containers-test), security/snyk (snyk-containers-test)'
-          allowed-conclusions: 'success, skipped'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Waiting for other PR checks to complete..."
+          while true; do
+            NON_FINAL_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.state != "SUCCESS" and .state != "FAILURE" and .state != "SKIPPED" and .state != "CANCELLED" and .name != "check_and_fail")) | length')
+            
+            echo "Current non-final checks count (excluding this workflow): $NON_FINAL_CHECKS"
+
+            if [ "$NON_FINAL_CHECKS" -eq 0 ]; then
+              echo "All other checks are complete."
+              break
+            else
+              echo "Waiting for 15 seconds before checking again..."
+              sleep 15
+            fi
+          done
+
+      - name: Check for and list failed checks
+        id: check_failures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking for failed checks..."
+          FAILED_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.bucket == "fail")) | .[] | "Name: \(.name), State: \(.state), Bucket: \(.bucket)"')
+          
+          if [ -n "$FAILED_CHECKS" ]; then
+            echo "::error::One or more PR checks failed."
+            echo "$FAILED_CHECKS"
+            exit 1
+          else
+            echo "All required checks passed. The job will succeed."
+          fi
