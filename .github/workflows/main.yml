@@ -8,6 +8,15 @@ jobs:
   check-status:
     runs-on: ubuntu-latest
     steps:
+      - name: Wait for Snyk Code check to complete
+        uses: fountainhead/action-wait-for-check@v1.1.0
+        id: wait-for-snyk
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: 'code/snyk (snyk-code-test)'
+          # You can add a timeout to prevent the workflow from waiting forever
+          # timeoutSeconds: 3600
+
       - name: Fetch PR check statuses
         id: get-checks
         uses: octokit/request-action@v2.1.0
@@ -23,12 +32,10 @@ jobs:
         run: |
           checks_json='${{ steps.get-checks.outputs.data }}'
           
-          # Log the status of every single check
           echo "--- All PR Check Statuses ---"
           echo "$checks_json" | jq -r '.check_runs[] | "Check: \(.name) | Status: \(.status) | Conclusion: \(.conclusion)"'
           echo "-----------------------------"
 
-          # Find and log only the failed checks
           failed_checks=$(echo "$checks_json" | jq -r '.check_runs[] | select(.conclusion == "failure" or .conclusion == "error") | .name')
           
           if [ -n "$failed_checks" ]; then
