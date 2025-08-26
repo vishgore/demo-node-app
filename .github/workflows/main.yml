@@ -1,11 +1,11 @@
-name: List All PR Checks (Robust Wait)
+name: Check and Fail on PR Checks
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  list_all_checks:
+  check_and_fail:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -21,8 +21,7 @@ jobs:
         run: |
           echo "Waiting for other PR checks to complete..."
           while true; do
-            # Get a list of checks that are still in a non-final state
-            NON_FINAL_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.state != "SUCCESS" and .state != "FAILURE" and .state != "SKIPPED" and .state != "CANCELLED" and .name != "list_all_checks")) | length')
+            NON_FINAL_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.state != "SUCCESS" and .state != "FAILURE" and .state != "SKIPPED" and .state != "CANCELLED" and .name != "check_and_fail")) | length')
             
             echo "Current non-final checks count (excluding this workflow): $NON_FINAL_CHECKS"
 
@@ -35,9 +34,18 @@ jobs:
             fi
           done
 
-      - name: List all checks
+      - name: Check for and list failed checks
+        id: check_failures
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Listing all completed checks for PR #${{ env.PR_NUMBER }}"
-          gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket,startedAt,completedAt --jq '.[] | "Name: \(.name), State: \(.state), Bucket: \(.bucket)"'
+          echo "Checking for failed checks..."
+          FAILED_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.bucket == "fail")) | .[] | "Name: \(.name), State: \(.state), Bucket: \(.bucket)"')
+          
+          if [ -n "$FAILED_CHECKS" ]; then
+            echo "::error::One or more PR checks failed."
+            echo "$FAILED_CHECKS"
+            exit 1
+          else
+            echo "All required checks passed. The job will succeed."
+          fi
