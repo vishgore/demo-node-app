@@ -19,13 +19,15 @@ jobs:
             let allChecksPassed = true;
             let pollAttempts = 0;
             const maxPollAttempts = 60; // Max 5 minutes (60 * 5s)
-            
+            let statusChecks = null; // Declare the variable here
+
             while (!checksAreComplete && pollAttempts < maxPollAttempts) {
-              const { data: statusChecks } = await github.rest.checks.listForRef({
+              const { data: currentStatusChecks } = await github.rest.checks.listForRef({
                 owner,
                 repo,
                 ref
               });
+              statusChecks = currentStatusChecks; // Assign the value inside the loop
 
               console.log('--- Current PR Checks Status ---');
               statusChecks.check_runs.forEach(check => {
