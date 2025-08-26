@@ -1,4 +1,4 @@
-name: Wrapper Check
+name: Wrapper Check with Enhanced Logging
 
 on:
   pull_request:
@@ -8,58 +8,63 @@ jobs:
   verify_all_checks:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for all PR checks to complete
-        id: wait_for_checks
+      - name: Wait for and verify all PR checks
+        id: verify_checks
         uses: actions/github-script@v6
         with:
           script: |
             const { owner, repo } = context.repo;
             const ref = context.sha;
+            let checksAreComplete = false;
+            let allChecksPassed = true;
+            let pollAttempts = 0;
+            const maxPollAttempts = 60; // Max 5 minutes (60 * 5s)
             
-            async function getCheckStatus() {
+            while (!checksAreComplete && pollAttempts < maxPollAttempts) {
               const { data: statusChecks } = await github.rest.checks.listForRef({
                 owner,
                 repo,
                 ref
               });
 
-              // Filter out checks that have a conclusion
+              console.log('--- Current PR Checks Status ---');
+              statusChecks.check_runs.forEach(check => {
+                console.log(`- **${check.name}**: ${check.status} (${check.conclusion})`);
+              });
+
+              // Check if all checks have a conclusion
               const pendingChecks = statusChecks.check_runs.filter(
                 (check) => check.status !== 'completed'
               );
 
-              if (pendingChecks.length > 0) {
-                console.log(`Waiting for ${pendingChecks.length} checks to complete:`);
-                pendingChecks.forEach(check => console.log(`- ${check.name} (${check.status})`));
-                return 'pending';
-              }
-
-              // All checks are complete, now check for failures
-              const failedChecks = statusChecks.check_runs.filter(
-                (check) => check.conclusion === 'failure' || check.conclusion === 'stale'
-              );
-
-              if (failedChecks.length > 0) {
-                console.log(`❌ Found ${failedChecks.length} failed checks.`);
-                failedChecks.forEach(check => console.log(`- ${check.name}`));
-                core.setFailed('Some required checks failed.');
+              if (pendingChecks.length === 0) {
+                checksAreComplete = true;
               } else {
-                console.log('✅ All required checks passed or were appropriately skipped.');
+                console.log(`\nWaiting for ${pendingChecks.length} checks to complete. Polling again in 5s...`);
+                pollAttempts++;
+                await new Promise(resolve => setTimeout(resolve, 5000));
               }
             }
             
-            // Poll for a maximum of 10 minutes
-            const maxPollTime = 10 * 60 * 1000; 
-            const startTime = Date.now();
+            if (!checksAreComplete) {
+              core.setFailed('Timed out waiting for checks to complete.');
+              return;
+            }
+
+            console.log('\n--- Final Check Summary ---');
             
-            while (true) {
-              const status = await getCheckStatus();
-              if (status !== 'pending') {
-                break;
-              }
-              if (Date.now() - startTime > maxPollTime) {
-                core.setFailed('Timed out waiting for checks to complete.');
-                break;
-              }
-              await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before next poll
+            const failedOrStaleChecks = statusChecks.check_runs.filter(
+              (check) => check.conclusion === 'failure' || check.conclusion === 'stale'
+            );
+            
+            if (failedOrStaleChecks.length > 0) {
+              console.log(`❌ Found ${failedOrStaleChecks.length} failed or stale checks.`);
+              failedOrStaleChecks.forEach(check => console.log(`- **${check.name}**: ${check.conclusion}`));
+              allChecksPassed = false;
+            } else {
+              console.log('✅ All checks passed or were appropriately skipped.');
+            }
+            
+            if (!allChecksPassed) {
+              core.setFailed('Some checks failed. Merge is blocked.');
             }
