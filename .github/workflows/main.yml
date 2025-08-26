@@ -13,7 +13,7 @@ jobs:
         id: wait-for-snyk
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          checkName: 'code/snyk (snyk-container-test)'
+          checkName: 'code/snyk (snyk-containers-test)'
           # You can add a timeout to prevent the workflow from waiting forever
           # timeoutSeconds: 3600
 
