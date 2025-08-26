@@ -16,19 +16,20 @@ jobs:
         run: echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
       - name: Wait for checks to complete
-        id: wait_for_checks
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Waiting for all PR checks to complete..."
           while true; do
-            PENDING_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket,startedAt,completedAt --jq '.[] | select(.bucket == "pending") | .name')
-            if [ -z "$PENDING_CHECKS" ]; then
+            PENDING_CHECKS_COUNT=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.state == "pending")) | length')
+            
+            echo "Current pending checks count: $PENDING_CHECKS_COUNT"
+
+            if [ "$PENDING_CHECKS_COUNT" -eq 0 ]; then
               echo "All checks are complete."
               break
             else
-              echo "Pending checks: $PENDING_CHECKS"
-              echo "Waiting for 30 seconds..."
+              echo "Waiting for 30 seconds before checking again..."
               sleep 30
             fi
           done
@@ -38,4 +39,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Listing failed checks for PR #${{ env.PR_NUMBER }}"
-          gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket,startedAt,completedAt --jq '.[] | select(.bucket == "fail") | "Name: \(.name), State: \(.state)"'
+          gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq '.[] | select(.bucket == "fail") | "Name: \(.name), State: \(.state), Bucket: \(.bucket)"'
