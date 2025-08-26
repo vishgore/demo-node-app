@@ -1,4 +1,4 @@
-name: List All PR Checks
+name: List All PR Checks (Robust Wait)
 
 on:
   pull_request:
@@ -21,11 +21,12 @@ jobs:
         run: |
           echo "Waiting for other PR checks to complete..."
           while true; do
-            PENDING_CHECKS_COUNT=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state --jq 'map(select(.state == "pending" and .name != "list_all_checks")) | length')
+            # Get a list of checks that are still in a non-final state
+            NON_FINAL_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.state != "SUCCESS" and .state != "FAILURE" and .state != "SKIPPED" and .state != "CANCELLED" and .name != "list_all_checks")) | length')
             
-            echo "Current pending checks count (excluding this workflow): $PENDING_CHECKS_COUNT"
+            echo "Current non-final checks count (excluding this workflow): $NON_FINAL_CHECKS"
 
-            if [ "$PENDING_CHECKS_COUNT" -eq 0 ]; then
+            if [ "$NON_FINAL_CHECKS" -eq 0 ]; then
               echo "All other checks are complete."
               break
             else
