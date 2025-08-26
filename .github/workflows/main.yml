@@ -1,11 +1,11 @@
-name: List PR Checks
+name: List Failed PR Checks
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  list_checks:
+  list_failed_checks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -15,9 +15,27 @@ jobs:
         id: get_pr_number
         run: echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
-      - name: List pull request checks
+      - name: Wait for checks to complete
+        id: wait_for_checks
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Listing checks for PR #${{ env.PR_NUMBER }}"
-          gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket,startedAt,completedAt --jq '.[] | "Name: \(.name), State: \(.state), Bucket: \(.bucket)"'
+          echo "Waiting for all PR checks to complete..."
+          while true; do
+            PENDING_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket,startedAt,completedAt --jq '.[] | select(.bucket == "pending") | .name')
+            if [ -z "$PENDING_CHECKS" ]; then
+              echo "All checks are complete."
+              break
+            else
+              echo "Pending checks: $PENDING_CHECKS"
+              echo "Waiting for 30 seconds..."
+              sleep 30
+            fi
+          done
+
+      - name: List failed checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Listing failed checks for PR #${{ env.PR_NUMBER }}"
+          gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket,startedAt,completedAt --jq '.[] | select(.bucket == "fail") | "Name: \(.name), State: \(.state)"'
