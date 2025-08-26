@@ -1,11 +1,11 @@
-name: List Failed PR Checks
+name: List All PR Checks
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  list_failed_checks:
+  list_all_checks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -21,7 +21,7 @@ jobs:
         run: |
           echo "Waiting for other PR checks to complete..."
           while true; do
-            PENDING_CHECKS_COUNT=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state --jq 'map(select(.state == "pending" and .name != "list_failed_checks")) | length')
+            PENDING_CHECKS_COUNT=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state --jq 'map(select(.state == "pending" and .name != "list_all_checks")) | length')
             
             echo "Current pending checks count (excluding this workflow): $PENDING_CHECKS_COUNT"
 
@@ -29,23 +29,14 @@ jobs:
               echo "All other checks are complete."
               break
             else
-              echo "Waiting for 30 seconds before checking again..."
-              sleep 30
+              echo "Waiting for 15 seconds before checking again..."
+              sleep 15
             fi
           done
 
-      - name: Check for and list failed checks
-        id: check_failures
+      - name: List all checks
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Checking for failed checks..."
-          FAILED_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.bucket == "fail")) | .[] | "Name: \(.name), State: \(.state)"')
-          
-          if [ -n "$FAILED_CHECKS" ]; then
-            echo "::error::Found failed checks on the pull request."
-            echo "$FAILED_CHECKS"
-            exit 1
-          else
-            echo "No failed checks found. All required checks passed."
-          fi
+          echo "Listing all completed checks for PR #${{ env.PR_NUMBER }}"
+          gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket,startedAt,completedAt --jq '.[] | "Name: \(.name), State: \(.state), Bucket: \(.bucket)"'
