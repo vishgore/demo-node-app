@@ -1,18 +1,13 @@
-name: List PR Checks with Delay
+name: List Failed PR Checks
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  list_checks:
+  list_failed_checks:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for checks to start
-        run: |
-          echo "Waiting 15 seconds to allow checks to start..."
-          sleep 15
-      
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -20,9 +15,37 @@ jobs:
         id: get_pr_number
         run: echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
-      - name: List pull request checks
+      - name: Wait for other checks to complete
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Listing checks for PR #${{ env.PR_NUMBER }}"
-          gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket,startedAt,completedAt --jq '.[] | "Name: \(.name), State: \(.state), Bucket: \(.bucket)"'
+          echo "Waiting for other PR checks to complete..."
+          while true; do
+            PENDING_CHECKS_COUNT=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state --jq 'map(select(.state == "pending" and .name != "list_failed_checks")) | length')
+            
+            echo "Current pending checks count (excluding this workflow): $PENDING_CHECKS_COUNT"
+
+            if [ "$PENDING_CHECKS_COUNT" -eq 0 ]; then
+              echo "All other checks are complete."
+              break
+            else
+              echo "Waiting for 30 seconds before checking again..."
+              sleep 30
+            fi
+          done
+
+      - name: Check for and list failed checks
+        id: check_failures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking for failed checks..."
+          FAILED_CHECKS=$(gh pr checks ${{ env.PR_NUMBER }} --json name,state,bucket --jq 'map(select(.bucket == "fail")) | .[] | "Name: \(.name), State: \(.state)"')
+          
+          if [ -n "$FAILED_CHECKS" ]; then
+            echo "::error::Found failed checks on the pull request."
+            echo "$FAILED_CHECKS"
+            exit 1
+          else
+            echo "No failed checks found. All required checks passed."
+          fi
