@@ -5,13 +5,61 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  check_all:
+  verify_all_checks:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for other checks to complete
-        uses: lewagon/wait-on-check-action@v1.4.0
+      - name: Wait for all PR checks to complete
+        id: wait_for_checks
+        uses: actions/github-script@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          check-name: 'code/snyk (snyk-containers-test), security/snyk (snyk-containers-test)'
-          allowed-conclusions: 'success, skipped'
+          script: |
+            const { owner, repo } = context.repo;
+            const ref = context.sha;
+            
+            async function getCheckStatus() {
+              const { data: statusChecks } = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref
+              });
+
+              // Filter out checks that have a conclusion
+              const pendingChecks = statusChecks.check_runs.filter(
+                (check) => check.status !== 'completed'
+              );
+
+              if (pendingChecks.length > 0) {
+                console.log(`Waiting for ${pendingChecks.length} checks to complete:`);
+                pendingChecks.forEach(check => console.log(`- ${check.name} (${check.status})`));
+                return 'pending';
+              }
+
+              // All checks are complete, now check for failures
+              const failedChecks = statusChecks.check_runs.filter(
+                (check) => check.conclusion === 'failure' || check.conclusion === 'stale'
+              );
+
+              if (failedChecks.length > 0) {
+                console.log(`❌ Found ${failedChecks.length} failed checks.`);
+                failedChecks.forEach(check => console.log(`- ${check.name}`));
+                core.setFailed('Some required checks failed.');
+              } else {
+                console.log('✅ All required checks passed or were appropriately skipped.');
+              }
+            }
+            
+            // Poll for a maximum of 10 minutes
+            const maxPollTime = 10 * 60 * 1000; 
+            const startTime = Date.now();
+            
+            while (true) {
+              const status = await getCheckStatus();
+              if (status !== 'pending') {
+                break;
+              }
+              if (Date.now() - startTime > maxPollTime) {
+                core.setFailed('Timed out waiting for checks to complete.');
+                break;
+              }
+              await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before next poll
+            }
