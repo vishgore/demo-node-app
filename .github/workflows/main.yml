@@ -1,73 +1,60 @@
-name: Wrapper Check
+name: Wrapper PR Status Checker
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  verify_all_checks:
+  check-status:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for and verify all PR checks
-        id: verify_checks
-        uses: actions/github-script@v6
+      - name: Fetch PR check statuses
+        id: get-checks
+        uses: octokit/request-action@v2.1.0
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const ref = context.sha;
-            let statusChecks = null;
-            let pollAttempts = 0;
-            const maxPollAttempts = 60; // Max 5 minutes (60 * 5s)
-
-            // Log the start of the script
-            console.log('✅ Wrapper script started. Fetching initial check status...');
-
-            // --- Polling loop to wait for all checks to complete ---
-            while (pollAttempts < maxPollAttempts) {
-              const { data: currentStatusChecks } = await github.rest.checks.listForRef({
-                owner,
-                repo,
-                ref
-              });
-              statusChecks = currentStatusChecks;
-              
-              console.log('--- Current PR Checks Status ---');
-              statusChecks.check_runs.forEach(check => {
-                console.log(`- **${check.name}**: ${check.status} (${check.conclusion})`);
-              });
-
-              // Filter for checks that are not yet completed
-              const pendingChecks = statusChecks.check_runs.filter(
-                (check) => check.status !== 'completed'
-              );
-
-              if (pendingChecks.length === 0) {
-                console.log('\nAll checks are completed. Exiting polling loop.');
-                break;
-              }
-
-              console.log(`\nWaiting for ${pendingChecks.length} checks to complete. Polling again in 5s...`);
-              pollAttempts++;
-              await new Promise(resolve => setTimeout(resolve, 5000));
+          route: GET /repos/{owner}/{repo}/commits/{commit_sha}/check-runs
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.event.repository.name }}
+          commit_sha: ${{ github.event.pull_request.head.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Evaluate check results
+        run: |
+          # Parse the JSON output from the previous step
+          checks=$(echo "${{ steps.get-checks.outputs.data }}" | jq -c '.check_runs[]')
+          
+          # Initialize a variable to track overall status
+          failed_checks=()
+          
+          # Loop through each check run
+          for check in $(echo "$checks" | jq -r '@base64'); do
+            _jq() {
+             echo "${check}" | base64 --decode | jq -r "$1"
             }
-            
-            // --- Final check after the loop finishes or times out ---
-            if (pollAttempts >= maxPollAttempts) {
-              core.setFailed('Timed out waiting for checks to complete.');
-              return;
-            }
-
-            console.log('\n--- Final Check Summary ---');
-            
-            // Look for any checks with a failure or stale conclusion
-            const failedOrStaleChecks = statusChecks.check_runs.filter(
-              (check) => check.conclusion === 'failure' || check.conclusion === 'stale'
-            );
-            
-            if (failedOrStaleChecks.length > 0) {
-              console.log(`❌ Found ${failedOrStaleChecks.length} failed or stale checks. Merge is blocked.`);
-              failedOrStaleChecks.forEach(check => console.log(`- **${check.name}**: ${check.conclusion}`));
-              core.setFailed('Some checks failed. Merge is blocked.');
-            } else {
-              console.log('✅ All required checks passed or were appropriately skipped.');
-            }
+          
+            check_name=$(_jq '.name')
+            check_status=$(_jq '.status')
+            check_conclusion=$(_jq '.conclusion')
+          
+            echo "Processing check: $check_name"
+            echo "Status: $check_status, Conclusion: $check_conclusion"
+          
+            # If a check is complete and its conclusion is "failure" or "error", we'll mark the wrapper as failed
+            if [ "$check_status" == "completed" ] && { [ "$check_conclusion" == "failure" ] || [ "$check_conclusion" == "error" ]; }; then
+              failed_checks+=("$check_name")
+            fi
+          done
+          
+          # If we have any failed checks, fail the workflow and provide a list of them
+          if [ ${#failed_checks[@]} -gt 0 ]; then
+            echo "----------------------------------------------------"
+            echo "Wrapper check failed because the following PR checks failed:"
+            for failed_check in "${failed_checks[@]}"; do
+              echo " - $failed_check"
+            done
+            echo "----------------------------------------------------"
+            exit 1 # Exit with a non-zero code to fail the job
+          else
+            echo "All PR checks passed successfully."
+          fi
