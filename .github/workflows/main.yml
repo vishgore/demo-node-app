@@ -21,40 +21,18 @@ jobs:
       
       - name: Evaluate check results
         run: |
-          # Parse the JSON output from the previous step
-          checks=$(echo "${{ steps.get-checks.outputs.data }}" | jq -c '.check_runs[]')
+          checks_json='${{ steps.get-checks.outputs.data }}'
           
-          # Initialize a variable to track overall status
-          failed_checks=()
+          # Use jq to directly filter and find failed checks.
+          # The -e flag ensures a non-zero exit code if no results are found, which is what we want here.
+          failed_checks=$(echo "$checks_json" | jq -r '.check_runs[] | select(.conclusion == "failure" or .conclusion == "error") | .name')
           
-          # Loop through each check run
-          for check in $(echo "$checks" | jq -r '@base64'); do
-            _jq() {
-             echo "${check}" | base64 --decode | jq -r "$1"
-            }
-          
-            check_name=$(_jq '.name')
-            check_status=$(_jq '.status')
-            check_conclusion=$(_jq '.conclusion')
-          
-            echo "Processing check: $check_name"
-            echo "Status: $check_status, Conclusion: $check_conclusion"
-          
-            # If a check is complete and its conclusion is "failure" or "error", we'll mark the wrapper as failed
-            if [ "$check_status" == "completed" ] && { [ "$check_conclusion" == "failure" ] || [ "$check_conclusion" == "error" ]; }; then
-              failed_checks+=("$check_name")
-            fi
-          done
-          
-          # If we have any failed checks, fail the workflow and provide a list of them
-          if [ ${#failed_checks[@]} -gt 0 ]; then
+          if [ -n "$failed_checks" ]; then
             echo "----------------------------------------------------"
             echo "Wrapper check failed because the following PR checks failed:"
-            for failed_check in "${failed_checks[@]}"; do
-              echo " - $failed_check"
-            done
+            echo "$failed_checks"
             echo "----------------------------------------------------"
-            exit 1 # Exit with a non-zero code to fail the job
+            exit 1
           else
-            echo "All PR checks passed successfully."
+            echo "All required PR checks passed successfully."
           fi
