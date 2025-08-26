@@ -1,4 +1,4 @@
-name: List All PR Checks
+name: List PR Checks
 
 on:
   pull_request:
@@ -7,29 +7,17 @@ on:
 jobs:
   list_checks:
     runs-on: ubuntu-latest
-    permissions:
-      checks: read
     steps:
-      - name: Wait for checks to initialize
-        run: |
-          echo "Waiting 30 seconds for checks to report their status..."
-          sleep 30
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Fetch and List all PR checks
-        id: get-checks
-        uses: octokit/request-action@v2.1.0
-        with:
-          route: GET /repos/{owner}/{repo}/commits/{commit_sha}/check-runs
-          owner: ${{ github.repository_owner }}
-          repo: ${{ github.event.repository.name }}
-          commit_sha: ${{ github.event.pull_request.head.sha }}
-          # Pass the token as a direct input to the action
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Get PR number
+        id: get_pr_number
+        run: echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
-      - name: Log all check statuses
+      - name: List pull request checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          checks_json='${{ steps.get-checks.outputs.data }}'
-          
-          echo "--- All PR Check Statuses ---"
-          echo "$checks_json" | jq -r '.check_runs[] | "Check: \(.name) | Status: \(.status) | Conclusion: \(.conclusion)"'
-          echo "-----------------------------"
+          echo "Listing checks for PR #${{ env.PR_NUMBER }}"
+          gh pr checks ${{ env.PR_NUMBER }} --json name,status,conclusion,startedAt,completedAt --jq '.[] | "Name: \(.name), Status: \(.status), Conclusion: \(.conclusion)"'
