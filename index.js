@@ -1,12 +1,14 @@
 var express = require('express');
 var app = express();
+const https = require('https');
+const { exec } = require('child_process');
 
 // 1. Insecure use of eval()
 app.get('/eval', function(req, res) {
   try {
     // Directly evaluating user input is extremely dangerous
     let userInput = req.query.code; 
-    let result = eval(userInput); 
+    let result = Function('return ' + userInput)(); 
     res.send(`{"response": "${result}"}`); 
   } catch (error) {
     res.status(500).send(`{"error": "${error.message}"}`);
@@ -51,6 +53,47 @@ app.get('/will', function(req, res) {
 
 app.get('/ready', function(req, res) {
     res.send('{"response": "Great, It works!"}');
+});
+
+// 5. Server-Side Request Forgery (SSRF)
+app.get('/ssrf', function(req, res) {
+  const url = req.query.url;
+  if (!url) {
+    return res.status(400).send('{"error": "URL parameter is required"}');
+  }
+
+  try {
+    https.get(url, (response) => {
+      let data = '';
+
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', () => {
+        res.send(data);
+      });
+    }).on('error', (err) => {
+      res.status(500).send(`{"error": "${err.message}"}`);
+    });
+  } catch (error) {
+    res.status(500).send(`{"error": "${error.message}"}`);
+  }
+});
+
+// 6. Remote Code Execution (RCE)
+app.get('/rce', function(req, res) {
+  const cmd = req.query.cmd;
+  if (!cmd) {
+    return res.status(400).send('{"error": "Command parameter is required"}');
+  }
+
+  exec(cmd, (error, stdout, stderr) => {
+    if (error) {
+      return res.status(500).send(`{"error": "${error.message}"}`);
+    }
+    res.send(`{"stdout": "${stdout}", "stderr": "${stderr}"}`);
+  });
 });
 
 app.listen(process.env.port || 3000);
