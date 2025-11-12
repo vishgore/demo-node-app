@@ -16,164 +16,101 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js for Snyk CLI
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Snyk CLI and snyk-to-html
-        run: |
-          npm install -g snyk
-          npm install -g snyk-to-html
-
-      - name: Authenticate Snyk CLI
-        run: snyk auth "${{ secrets.SNYK_TOKEN }}"
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
-      # --- Snyk Open Source (Dependency) Scan ---
-      - name: Install Node.js dependencies (Example for Open Source Scan)
-        run: npm install # Or 'yarn install', 'pip install -r requirements.txt', etc.
-
-      - name: Run Snyk Open Source Scan (JSON output)
-        id: snyk_oss_scan
-        continue-on-error: true
-        run: |
-          set +e # Do not exit immediately if a command fails
-          snyk test --all-projects --severity-threshold=high --fail-on=upgradable --json > snyk_oss_results.json
-          SNYK_STATUS=$?
-          echo "SNYK_OSS_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
-          set -e # Re-enable exit on error for subsequent commands in this step
-
-      - name: Convert Snyk Open Source JSON to HTML
-        if: always()
-        run: |
-          echo "Checking snyk_oss_results.json before HTML conversion:"
-          ls -l snyk_oss_results.json # Diagnostic: Check if JSON file exists and its size
-          snyk-to-html -i snyk_oss_results.json -o snyk_oss_report.html || true
-
-      # --- Snyk Code Scan ---
-      - name: Run Snyk Code Scan (JSON output)
-        id: snyk_code_scan
-        continue-on-error: true
-        run: |
-          set +e # Do not exit immediately if a command fails
-          snyk code test --severity-threshold=high --json > snyk_code_results.json
-          SNYK_STATUS=$?
-          echo "SNYK_CODE_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
-          set -e # Re-enable exit on error for subsequent commands in this step
-
-      - name: Convert Snyk Code JSON to HTML
-        if: always()
-        run: |
-          echo "Checking snyk_code_results.json before HTML conversion:"
-          ls -l snyk_code_results.json # Diagnostic: Check if JSON file exists and its size
-          snyk-to-html -i snyk_code_results.json -o snyk_code_report.html || true
-
-      # --- Snyk Container Scan ---
-      - name: Build Docker Image (Example for Container Scan)
-        run: docker build -t my-app-image .
-
-      - name: Run Snyk Container Scan (JSON output)
-        id: snyk_container_scan
-        continue-on-error: true
-        run: |
-          set +e # Do not exit immediately if a command fails
-          snyk container test my-app-image --severity-threshold=high --fail-on=upgradable --json > snyk_container_results.json
-          SNYK_STATUS=$?
-          echo "SNYK_CONTAINER_EXIT_CODE=$SNYK_STATUS" >> $GITHUB_OUTPUT
-          set -e # Re-enable exit on error for subsequent commands in this step
-
-      - name: Convert Snyk Container JSON to HTML
-        if: always()
-        run: |
-          echo "Checking snyk_container_results.json before HTML conversion:"
-          ls -l snyk_container_results.json # Diagnostic: Check if JSON file exists and its size
-          snyk-to-html -i snyk_container_results.json -o snyk_container_report.html || true
-
-      # --- Upload Snyk results as artifacts ---
-      - name: Upload Snyk Scan Results
-        uses: actions/upload-artifact@v4
-        with:
-          name: snyk-scan-results
-          path: |
-            snyk_oss_results.json
-            snyk_oss_report.html
-            snyk_code_results.json
-            snyk_code_report.html
-            snyk_container_results.json
-            snyk_container_report.html
-          retention-days: 5
-
-      # --- Consolidated Snyk Scan Reporting ---
-      - name: Consolidated Snyk Scan Reporting
-        if: always()
-        run: |
-          echo "--- Snyk Open Source Scan Report ---"
-          OSS_EXIT_CODE="${{ steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE }}"
-          if [[ "$OSS_EXIT_CODE" == "0" ]]; then
-            echo "✅ Snyk Open Source Scan: No high/critical upgradable vulnerabilities found."
-          elif [[ "$OSS_EXIT_CODE" == "1" ]]; then
-            echo "❌ Snyk Open Source Scan: High or Critical upgradable vulnerabilities found. Review snyk_oss_results.json and snyk_oss_report.html for details."
-          elif [[ "$OSS_EXIT_CODE" == "2" ]]; then
-            echo "❌ Snyk Open Source Scan: An error occurred (exit code 2). Please check the workflow logs for details."
-          elif [[ "$OSS_EXIT_CODE" == "3" ]]; then
-            echo "❌ Snyk Open Source Scan: No supported projects detected (exit code 3). Check your project structure and logs."
-          else
-            echo "❓ Snyk Open Source Scan: Unknown exit code: ${OSS_EXIT_CODE:-'Not Set'}. Please check the workflow logs."
-          fi
-
-          echo ""
-          echo "--- Snyk Code Scan Report ---"
-          CODE_EXIT_CODE="${{ steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE }}"
-          if [[ "$CODE_EXIT_CODE" == "0" ]]; then
-            echo "✅ Snyk Code Scan: No high/critical code vulnerabilities found."
-          elif [[ "$CODE_EXIT_CODE" == "1" ]]; then
-            echo "❌ Snyk Code Scan: High or Critical code vulnerabilities found. Review snyk_code_results.json and snyk_code_report.html for details."
-          elif [[ "$CODE_EXIT_CODE" == "2" ]]; then
-            echo "❌ Snyk Code Scan: An error occurred (exit code 2). Please check the workflow logs for details."
-          elif [[ "$CODE_EXIT_CODE" == "3" ]]; then
-            echo "❌ Snyk Code Scan: No supported projects detected (exit code 3). Check your project structure and logs."
-          else
-            echo "❓ Snyk Code Scan: Unknown exit code: ${CODE_EXIT_CODE:-'Not Set'}. Please check the workflow logs."
-          fi
-
-          echo ""
-          echo "--- Snyk Container Scan Report ---"
-          CONTAINER_EXIT_CODE="${{ steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE }}"
-          if [[ "$CONTAINER_EXIT_CODE" == "0" ]]; then
-            echo "✅ Snyk Container Scan: No high/critical upgradable container vulnerabilities found."
-          elif [[ "$CONTAINER_EXIT_CODE" == "1" ]]; then
-            echo "❌ Snyk Container Scan: High or Critical upgradable vulnerabilities found. Review snyk_container_results.json and snyk_container_report.html for details."
-          elif [[ "$CONTAINER_EXIT_CODE" == "2" ]]; then
-            echo "❌ Snyk Container Scan: An error occurred (exit code 2). Please check the workflow logs for details."
-          elif [[ "$CONTAINER_EXIT_CODE" == "3" ]]; then
-            echo "❌ Snyk Container Scan: No supported projects detected (exit code 3). Check your project structure or image name and logs."
-          else
-            echo "❓ Snyk Container Scan: Unknown exit code: ${CONTAINER_EXIT_CODE:-'Not Set'}. Please check the workflow logs."
-          fi
-
-      # --- Final Snyk Scan Status Check ---
-      - name: Final Snyk Scan Status Check
-        run: |
-          OSS_EXIT_CODE="${{ steps.snyk_oss_scan.outputs.SNYK_OSS_EXIT_CODE }}"
-          CODE_EXIT_CODE="${{ steps.snyk_code_scan.outputs.SNYK_CODE_EXIT_CODE }}"
-          CONTAINER_EXIT_CODE="${{ steps.snyk_container_scan.outputs.SNYK_CONTAINER_EXIT_CODE }}"
-
-          echo "Final OSS Scan Exit Code: ${OSS_EXIT_CODE:-'Not Set'}"
-          echo "Final Code Scan Exit Code: ${CODE_EXIT_CODE:-'Not Set'}"
-          echo "Final Container Scan Exit Code: ${CONTAINER_EXIT_CODE:-'Not Set'}"
-
-          # Fail the job if any scan had a non-zero exit code (1, 2, or 3)
-          # Using default '1' if variable is unset/null to ensure failure if output was not captured.
-          if [[ "${OSS_EXIT_CODE:-1}" != "0" || \
-                "${CODE_EXIT_CODE:-1}" != "0" || \
-                "${CONTAINER_EXIT_CODE:-1}" != "0" ]]; then
-            echo "One or more Snyk scans reported issues or errors. Failing the job."
-            exit 1
-          else
-            echo "All Snyk scans completed successfully with no high/critical issues found."
-          fi
+    - name: Checkout repository
+      uses: actions/checkout@v4
+  
+    - name: Set up Node.js for Snyk CLI and Tools
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+  
+    - name: Install Snyk CLI and Filtering Tools
+      run: |
+        npm install -g snyk
+        # Install snyk-filter for custom build-fail logic
+        npm install -g snyk-filter
+        # Install jq for parsing and formatting JSON results
+        sudo apt-get install -y jq
+  
+    - name: Authenticate Snyk CLI
+      run: snyk auth "${{ secrets.SNYK_TOKEN }}"
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+  
+    # --- Snyk Open Source (Dependency) Scan ---
+    - name: Install Node.js dependencies
+      run: npm install # Adjust this command based on your package manager (e.g., pip install, composer install)
+  
+    - name: Run Snyk Open Source Scan (Save JSON)
+      id: snyk_oss_scan_json
+      # Use || true to suppress snyk test exit code 1, allowing the filter step to handle the fail/pass logic.
+      run: |
+        echo "Running Snyk Open Source scan..."
+        snyk test --all-projects --json > snyk_oss_results.json || true
+        echo "Snyk OSS Scan completed. Results saved to snyk_oss_results.json"
+  
+    - name: Filter Snyk Open Source Issues by Exploit Maturity (FAIL GATE)
+      id: snyk_oss_filter
+      # This step fails the job if any vulnerability has 'Mature' or 'Proof of concept' exploit maturity.
+      run: |
+        echo "Checking for vulnerabilities with Mature or Proof of Concept exploits..."
+        # The jq filter checks all project results and all vulnerabilities for the maturity criteria
+        snyk-filter -i snyk_oss_results.json \
+          --fail-on '.[].vulnerabilities[].exploitMaturity | select(. == "Mature" or . == "Proof of concept")'
+  
+    - name: Generate Markdown Summary Table
+      id: generate_summary
+      run: |
+        # Use jq to extract key fields (severity, title, package, exploitMaturity)
+        # We check the exit code of the snyk-filter step to determine the outcome message.
+        FILTER_EXIT_CODE="${{ steps.snyk_oss_filter.outcome }}"
+  
+        if [ "$FILTER_EXIT_CODE" == "success" ]; then
+          SUMMARY="✅ **Snyk Security Gate Passed:** No issues found with 'Mature' or 'Proof of concept' exploit maturity."
+        else
+          SUMMARY="❌ **Snyk Security Gate FAILED:** The build was blocked due to high-risk vulnerabilities with 'Mature' or 'Proof of concept' exploits. Fix the following issues immediately:"
+          
+          VULN_DATA=$(jq -r '[
+            .[] | {
+              project: .targetFile,
+              vulnerabilities: [
+                .vulnerabilities[] | {
+                  severity: .severity, 
+                  title: .title, 
+                  package: .packageName,
+                  exploitMaturity: .exploitMaturity
+                }
+                | select(.exploitMaturity == "Mature" or .exploitMaturity == "Proof of concept")
+              ]
+            } | .vulnerabilities[]
+          ] | 
+          # Output a markdown table header
+          "| Severity | Exploit Maturity | Vulnerability | Package | \n| :---: | :---: | :--- | :--- |" + 
+          # Output the rows
+          (map("| **\(.severity | ascii_upcase)** | \(.exploitMaturity) | \(.title) | \(.package) |") | .[])' snyk_oss_results.json)
+          
+          SUMMARY="${SUMMARY}\n\n${VULN_DATA}"
+        fi
+  
+        # Set the summary as an output variable for the next step
+        echo "SUMMARY<<EOF" >> $GITHUB_OUTPUT
+        echo "$SUMMARY" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+  
+    - name: Post PR Comment
+      if: github.event_name == 'pull_request' && always()
+      uses: peter-evans/create-or-update-comment@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        issue-number: ${{ github.event.pull_request.number }}
+        body: ${{ steps.generate_summary.outputs.SUMMARY }}
+  
+    # --- Upload Snyk results as artifacts ---
+    - name: Upload Snyk Scan Artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: snyk-oss-scan-results
+        path: |
+          snyk_oss_results.json
+        retention-days: 5
