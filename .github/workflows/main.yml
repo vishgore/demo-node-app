@@ -14,7 +14,7 @@ on:
 jobs:
   snyk_security_scan:
     runs-on: ubuntu-latest
-    # --- FIX 2: Explicitly grant permissions for posting PR comments ---
+    # Explicitly grant permissions for posting PR comments (solves 403 error)
     permissions:
       contents: read # Required for actions/checkout@v4 and uploading artifacts
       issues: write # Required for peter-evans/create-or-update-comment@v3 (PR comments are issues)
@@ -31,9 +31,7 @@ jobs:
       - name: Install Snyk CLI and Filtering Tools
         run: |
           npm install -g snyk
-          # Install snyk-filter for custom build-fail logic
           npm install -g snyk-filter
-          # Install jq for parsing and formatting JSON results
           sudo apt-get install -y jq
 
       # --- Configuration Step: Create the Fail Gate Policy File ---
@@ -43,7 +41,8 @@ jobs:
           echo "Writing snyk-fail-gate.yml to the repository root..."
           cat <<EOF > snyk-fail-gate.yml
           filters:
-            failOn: |
+            # FIX: Using the 'filter' key resolves the TypeError
+            filter: |
               # This corrected jq path handles the single root Snyk JSON object.
               .vulnerabilities[].exploit | select(. == "Mature" or . == "Proof of Concept")
           EOF
@@ -76,7 +75,7 @@ jobs:
 
           echo "2. Applying Exploit Maturity Filter from $FILTER_FILE..."
           
-          # --- FIX 1: Read file directly using -i $JSON_FILE ---
+          # FIX: Read file directly using -i $JSON_FILE (solves broken pipe error) 
           snyk-filter -i $JSON_FILE -f $FILTER_FILE
             
           FILTER_EXIT_CODE=$?
@@ -152,6 +151,6 @@ jobs:
         with:
           name: snyk-oss-scan-results
           path: |
-            snyk-fail-gate.yml # Also upload the policy for review
+            snyk-fail-gate.yml
             snyk_oss_results.json
           retention-days: 5
