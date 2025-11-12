@@ -72,7 +72,7 @@ jobs:
           echo "2. Applying Exploit Maturity Filter from $FILTER_FILE..."
           
           # 2. Pipe the saved JSON content through snyk-filter, explicitly passing the custom filter file via -f.
-          cat $JSON_FILE | snyk-filter -i - -f $FILTER_FILE
+          cat $JSON_FILE | snyk-filter -i -f $FILTER_FILE
             
           FILTER_EXIT_CODE=$?
           
