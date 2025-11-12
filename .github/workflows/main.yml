@@ -33,14 +33,15 @@ jobs:
           sudo apt-get install -y jq
 
       # --- Configuration Step: Create the Fail Gate Policy File ---
-      # This step ensures the snyk-filter policy file exists with the correct content.
+      # This step dynamically creates the snyk-filter policy file with the corrected jq logic.
       - name: Create snyk-filter Policy File
         run: |
           echo "Writing snyk-fail-gate.yml to the repository root..."
           cat <<EOF > snyk-fail-gate.yml
           filters:
             failOn: |
-              .[].vulnerabilities[].exploitMaturity | select(. == "Mature" or . == "Proof of concept")
+              # This corrected jq path handles the single root Snyk JSON object.
+              .vulnerabilities[].exploit | select(. == "Mature" or . == "Proof of Concept")
           EOF
         
       - name: Authenticate Snyk CLI
@@ -59,20 +60,20 @@ jobs:
           FILTER_FILE="snyk-fail-gate.yml"
 
           echo "1. Running Snyk Open Source scan and saving JSON..."
-          # 1a. Run Snyk and pipe output to the JSON file. Use || true to save the JSON even if issues are found (exit code 1).
+          # Run Snyk and pipe output to the JSON file. Use || true to save the JSON even if issues are found.
           snyk test --all-projects --json > $JSON_FILE || true
           
-          # 1b. Sanity check: ensure the file was created.
+          # Sanity check: ensure the file was created.
           if [ ! -s $JSON_FILE ]; then
-            echo "Error: Snyk scan failed to generate valid JSON output. Check the project structure or Snyk logs."
+            echo "Error: Snyk scan failed to generate valid JSON output."
             echo "SNYK_FILTER_RESULT=error" >> $GITHUB_OUTPUT
             exit 1 # Fail the step if no JSON file was created
           fi
 
           echo "2. Applying Exploit Maturity Filter from $FILTER_FILE..."
           
-          # 2. Pipe the saved JSON content through snyk-filter, explicitly passing the custom filter file via -f.
-          cat $JSON_FILE | snyk-filter -i -f $FILTER_FILE
+          # Pipe the saved JSON content through snyk-filter, using -i - (read from stdin) and the custom filter file.
+          cat $JSON_FILE | snyk-filter -i - -f $FILTER_FILE
             
           FILTER_EXIT_CODE=$?
           
@@ -91,41 +92,37 @@ jobs:
 
       - name: Generate Markdown Summary Table
         id: generate_summary
-        # This step will run even if the previous step failed (via if: always()), to generate the failure report.
+        # This step runs even if the previous step failed, to generate the failure report for the PR comment.
         if: always()
         run: |
-          # The filter result is now read from the previous step's output variable.
           FILTER_RESULT="${{ steps.snyk_oss_filter_gate.outputs.SNYK_FILTER_RESULT }}"
 
           if [ "$FILTER_RESULT" == "success" ]; then
-            SUMMARY="✅ **Snyk Security Gate Passed:** No issues found with 'Mature' or 'Proof of concept' exploit maturity."
+            SUMMARY="✅ **Snyk Security Gate Passed:** No issues found with 'Mature' or 'Proof of Concept' exploit maturity."
           else
-            SUMMARY="❌ **Snyk Security Gate FAILED:** The build was blocked due to high-risk vulnerabilities with 'Mature' or 'Proof of concept' exploits. Fix the following issues immediately:"
+            SUMMARY="❌ **Snyk Security Gate FAILED:** The build was blocked due to high-risk vulnerabilities with 'Mature' or 'Proof of Concept' exploits. Fix the following issues immediately:"
             
-            # This check should now pass reliably.
             if [ -s snyk_oss_results.json ]; then
-              VULN_DATA=$(jq -r '[
-                .[] | {
-                  project: .targetFile,
-                  vulnerabilities: [
-                    .vulnerabilities[] | {
-                      severity: .severity, 
-                      title: .title, 
-                      package: .packageName,
-                      exploitMaturity: .exploitMaturity
-                    }
-                    | select(.exploitMaturity == "Mature" or .exploitMaturity == "Proof of concept")
-                  ]
-                } | .vulnerabilities[]
-              ] | 
-              # Output a markdown table header
-              "| Severity | Exploit Maturity | Vulnerability | Package | \n| :---: | :---: | :--- | :--- |" + 
-              # Output the rows
-              (map("| **\(.severity | ascii_upcase)** | \(.exploitMaturity) | \(.title) | \(.package) |") | .[])' snyk_oss_results.json)
+              
+              # Corrected JQ FILTER for single root object JSON
+              VULN_DATA=$(jq -r '
+                . as $root | 
+                # Start with project context
+                "**Project:** \($root.projectName) (\($root.displayTargetFile))\n" + 
+                "| Severity | Exploit Maturity | Vulnerability | Package |\n" + 
+                "| :---: | :---: | :--- | :--- |" + 
+                # Map and filter the vulnerabilities array
+                (
+                  $root.vulnerabilities[] | 
+                  # Filter only for Mature or Proof of Concept issues
+                  select(.exploit == "Mature" or .exploit == "Proof of Concept") | 
+                  # Format the output row
+                  "| **\(.severity | ascii_upcase)** | \(.exploit) | \(.title) | \(.packageName) |"
+                )
+              ' snyk_oss_results.json)
               
               SUMMARY="${SUMMARY}\n\n${VULN_DATA}"
             else
-              # This path should ideally not be reached with the new logic
               SUMMARY="${SUMMARY}\n\n*Error: The JSON file was not generated during the scan.*"
             fi
           fi
