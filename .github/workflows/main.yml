@@ -14,6 +14,10 @@ on:
 jobs:
   snyk_security_scan:
     runs-on: ubuntu-latest
+    # --- FIX 2: Explicitly grant permissions for posting PR comments ---
+    permissions:
+      contents: read # Required for actions/checkout@v4 and uploading artifacts
+      issues: write # Required for peter-evans/create-or-update-comment@v3 (PR comments are issues)
 
     steps:
       - name: Checkout repository
@@ -72,8 +76,8 @@ jobs:
 
           echo "2. Applying Exploit Maturity Filter from $FILTER_FILE..."
           
-          # Pipe the saved JSON content through snyk-filter, using -i - (read from stdin) and the custom filter file.
-          cat $JSON_FILE | snyk-filter -i - -f $FILTER_FILE
+          # --- FIX 1: Read file directly using -i $JSON_FILE ---
+          snyk-filter -i $JSON_FILE -f $FILTER_FILE
             
           FILTER_EXIT_CODE=$?
           
@@ -133,6 +137,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Post PR Comment
+        # The 'issues: write' permission in the job ensures this succeeds on PRs.
         if: github.event_name == 'pull_request' && always()
         uses: peter-evans/create-or-update-comment@v3
         with:
