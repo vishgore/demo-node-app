@@ -14,7 +14,7 @@ on:
 jobs:
   snyk_security_scan:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,32 +43,40 @@ jobs:
     
       - name: Run Snyk Scan, Filter, and Save Results (FAIL GATE)
         id: snyk_oss_filter_gate
-        # This single step runs Snyk, pipes the output, saves the JSON via 'tee', 
-        # and runs snyk-filter. The exit code of snyk-filter determines the step's success/failure.
         run: |
-          echo "Running Snyk Open Source scan and checking for 'Mature' or 'Proof of concept' exploits..."
+          JSON_FILE="snyk_oss_results.json"
           
-          # The 'exec 3>&1' sets up a temporary file descriptor for clean piping.
-          exec 3>&1
+          echo "1. Running Snyk Open Source scan and saving JSON..."
+          # 1a. Run Snyk and pipe output to the JSON file. Use || true to save the JSON even if issues are found (exit code 1).
+          snyk test --all-projects --json > $JSON_FILE || true
           
-          # Run snyk test, pipe JSON through 'tee' (saves to snyk_oss_results.json) 
-          # then pipe to 'snyk-filter -i -' (reads from stdin).
-          # '|| true' on snyk test ignores exit code 1 (vulnerabilities found).
-          if snyk test --all-projects --json 2>&1 >&3 || true | tee snyk_oss_results.json | snyk-filter -i - \
-            --fail-on '.[].vulnerabilities[].exploitMaturity | select(. == "Mature" or . == "Proof of concept")'; then
-            
-            # If snyk-filter succeeds (exit code 0)
-            echo "SNYK_FILTER_RESULT=success" >> $GITHUB_OUTPUT
-            echo "✅ Snyk Security Gate Passed: No high-maturity exploits found."
-    
-          else
-            # If snyk-filter fails (exit code 1)
-            echo "SNYK_FILTER_RESULT=failure" >> $GITHUB_OUTPUT
-            echo "❌ Snyk Security Gate FAILED: High-maturity exploits detected."
-            exit 1 # Explicitly fail the step
+          # 1b. Sanity check: ensure the file was created.
+          if [ ! -s $JSON_FILE ]; then
+            echo "Error: Snyk scan failed to generate valid JSON output. Check the project structure or Snyk logs."
+            echo "SNYK_FILTER_RESULT=error" >> $GITHUB_OUTPUT
+            exit 1 # Fail the step if no JSON file was created
           fi
     
-      # --- Steps below use the snyk_oss_results.json file saved by tee in the previous step ---
+          echo "2. Applying Exploit Maturity Filter..."
+          
+          # 2. Pipe the saved JSON content through snyk-filter. -i - reads from stdin.
+          cat $JSON_FILE | snyk-filter -i - \
+            --fail-on '.[].vulnerabilities[].exploitMaturity | select(. == "Mature" or . == "Proof of concept")'
+            
+          FILTER_EXIT_CODE=$?
+          
+          if [ "$FILTER_EXIT_CODE" -eq 0 ]; then
+            # Snyk filter found no matches (exit code 0)
+            echo "SNYK_FILTER_RESULT=success" >> $GITHUB_OUTPUT
+            echo "✅ Snyk Security Gate Passed: No high-maturity exploits found."
+          else
+            # Snyk filter found matches (exit code 1)
+            echo "SNYK_FILTER_RESULT=failure" >> $GITHUB_OUTPUT
+            echo "❌ Snyk Security Gate FAILED: High-maturity exploits detected."
+            exit 1 # Explicitly fail the step, ensuring the workflow halts
+          fi
+    
+      # --- Steps below use the snyk_oss_results.json file saved by the previous step ---
     
       - name: Generate Markdown Summary Table
         id: generate_summary
@@ -83,7 +91,7 @@ jobs:
           else
             SUMMARY="❌ **Snyk Security Gate FAILED:** The build was blocked due to high-risk vulnerabilities with 'Mature' or 'Proof of concept' exploits. Fix the following issues immediately:"
             
-            # Ensure snyk_oss_results.json exists and is not empty before running jq
+            # This check should now pass reliably.
             if [ -s snyk_oss_results.json ]; then
               VULN_DATA=$(jq -r '[
                 .[] | {
@@ -106,7 +114,8 @@ jobs:
               
               SUMMARY="${SUMMARY}\n\n${VULN_DATA}"
             else
-              SUMMARY="${SUMMARY}\n\n*Error: Could not find or read snyk_oss_results.json for detailed reporting.*"
+              # This path should ideally not be reached with the new logic
+              SUMMARY="${SUMMARY}\n\n*Error: The JSON file was not generated during the scan.*"
             fi
           fi
     
