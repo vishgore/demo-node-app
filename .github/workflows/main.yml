@@ -1,4 +1,4 @@
-name: Snyk Security Scan
+name: Snyk Open Source Scan with Exploit Maturity Filter
 
 on:
   push:
@@ -14,16 +14,16 @@ on:
 jobs:
   snyk_security_scan:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-    
+
       - name: Set up Node.js for Snyk CLI and Tools
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-    
+
       - name: Install Snyk CLI and Filtering Tools
         run: |
           npm install -g snyk
@@ -31,21 +31,33 @@ jobs:
           npm install -g snyk-filter
           # Install jq for parsing and formatting JSON results
           sudo apt-get install -y jq
-    
+
+      # --- Configuration Step: Create the Fail Gate Policy File ---
+      # This step ensures the snyk-filter policy file exists with the correct content.
+      - name: Create snyk-filter Policy File
+        run: |
+          echo "Writing snyk-fail-gate.yml to the repository root..."
+          cat <<EOF > snyk-fail-gate.yml
+          filters:
+            failOn: |
+              .[].vulnerabilities[].exploitMaturity | select(. == "Mature" or . == "Proof of concept")
+          EOF
+        
       - name: Authenticate Snyk CLI
         run: snyk auth "${{ secrets.SNYK_TOKEN }}"
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-    
+
       # --- Snyk Open Source (Dependency) Scan ---
       - name: Install Node.js dependencies
-        run: npm install # Adjust this command based on your package manager (e.g., pip install, composer install)
-    
+        run: npm install # Adjust this command based on your project's package manager
+
       - name: Run Snyk Scan, Filter, and Save Results (FAIL GATE)
         id: snyk_oss_filter_gate
         run: |
           JSON_FILE="snyk_oss_results.json"
-          
+          FILTER_FILE="snyk-fail-gate.yml"
+
           echo "1. Running Snyk Open Source scan and saving JSON..."
           # 1a. Run Snyk and pipe output to the JSON file. Use || true to save the JSON even if issues are found (exit code 1).
           snyk test --all-projects --json > $JSON_FILE || true
@@ -56,12 +68,11 @@ jobs:
             echo "SNYK_FILTER_RESULT=error" >> $GITHUB_OUTPUT
             exit 1 # Fail the step if no JSON file was created
           fi
-    
-          echo "2. Applying Exploit Maturity Filter..."
+
+          echo "2. Applying Exploit Maturity Filter from $FILTER_FILE..."
           
-          # 2. Pipe the saved JSON content through snyk-filter. -i - reads from stdin.
-          cat $JSON_FILE | snyk-filter -i - \
-            --fail-on '.[].vulnerabilities[].exploitMaturity | select(. == "Mature" or . == "Proof of concept")'
+          # 2. Pipe the saved JSON content through snyk-filter, explicitly passing the custom filter file via -f.
+          cat $JSON_FILE | snyk-filter -i - -f $FILTER_FILE
             
           FILTER_EXIT_CODE=$?
           
@@ -75,9 +86,9 @@ jobs:
             echo "❌ Snyk Security Gate FAILED: High-maturity exploits detected."
             exit 1 # Explicitly fail the step, ensuring the workflow halts
           fi
-    
+
       # --- Steps below use the snyk_oss_results.json file saved by the previous step ---
-    
+
       - name: Generate Markdown Summary Table
         id: generate_summary
         # This step will run even if the previous step failed (via if: always()), to generate the failure report.
@@ -85,7 +96,7 @@ jobs:
         run: |
           # The filter result is now read from the previous step's output variable.
           FILTER_RESULT="${{ steps.snyk_oss_filter_gate.outputs.SNYK_FILTER_RESULT }}"
-    
+
           if [ "$FILTER_RESULT" == "success" ]; then
             SUMMARY="✅ **Snyk Security Gate Passed:** No issues found with 'Mature' or 'Proof of concept' exploit maturity."
           else
@@ -118,12 +129,12 @@ jobs:
               SUMMARY="${SUMMARY}\n\n*Error: The JSON file was not generated during the scan.*"
             fi
           fi
-    
+
           # Set the summary as an output variable for the next step
           echo "SUMMARY<<EOF" >> $GITHUB_OUTPUT
           echo "$SUMMARY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-    
+
       - name: Post PR Comment
         if: github.event_name == 'pull_request' && always()
         uses: peter-evans/create-or-update-comment@v3
@@ -131,7 +142,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
           body: ${{ steps.generate_summary.outputs.SUMMARY }}
-    
+
       # --- Upload Snyk results as artifacts ---
       - name: Upload Snyk Scan Artifacts
         if: always()
@@ -139,5 +150,6 @@ jobs:
         with:
           name: snyk-oss-scan-results
           path: |
+            snyk-fail-gate.yml # Also upload the policy for review
             snyk_oss_results.json
           retention-days: 5
