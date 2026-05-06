@@ -96,5 +96,30 @@ app.get('/rce', function(req, res) {
   });
 });
 
+
+// 7. NoSQL Injection Vulnerability
+app.get('/nosql-injection', function(req, res) {
+  let username = req.query.username;
+  let password = req.query.password;
+
+  // Insecure: Directly using user input to construct query without sanitization
+  // Simulating a NoSQL query for user authentication
+  const user = { username: 'admin', password: 'password123' }; // Hardcoded user for simulation
+
+  // This condition is vulnerable to NoSQL injection
+  // Example payload: ?username=admin&password[$ne]=null
+  if (username == user.username && password == user.password) {
+    res.send(`{"response": "Login successful for user ${username}"}`);
+  } else {
+    // If password is an object, it implies a NoSQL injection attempt, but also allows bypass
+    // For example, if password = {$ne: null}, it will always be true
+    if (username == user.username && typeof password === 'object') {
+        res.send(`{"response": "Login successful (bypassed with NoSQL injection) for user ${username}"}`);
+    } else {
+        res.status(401).send(`{"error": "Invalid credentials"}`);
+    }
+  }
+});
+
 app.listen(process.env.port || 3000);
 module.exports = app;
